@@ -4,6 +4,7 @@ import {
 	Logger, logger,
 	DebugSession, LoggingDebugSession,
 	InitializedEvent, TerminatedEvent, StoppedEvent, BreakpointEvent, OutputEvent, Event,
+	ContinuedEvent,
 	Thread, StackFrame, Scope, Source, Handles, Breakpoint, Variable,
 	LoadedSourceEvent
 } from 'vscode-debugadapter';
@@ -322,9 +323,33 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 
 	protected pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments): void {
-		this.sendEvent(new OutputEvent(`ERR>pause not implemented\n`));
-		this.sendResponse(response);
-		this.sendEvent(new StoppedEvent("breakpoint", PerlDebugSession.THREAD_ID));
+
+		if (this.perlDebugger.isRemote) {
+			response.success = false;
+			response.body = {
+				error: {
+					message: 'Cannot send SIGINT to debugger on remote system'
+				}
+			};
+			this.sendResponse(response);
+
+		} else {
+
+			// Send SIGINT to the `perl -d` process on the local system.
+			process.kill(this.perlDebugger.debuggerPid, 'SIGINT');
+			this.sendResponse(response);
+
+			// TODO(bh): It is not clear if we are supposed to also send a
+			// `StoppedEvent` and if we are, what the logic for that ought
+			// to be. Basically, whenever we see the `DB<N>` prompt from
+			// the debugger we are most probably stopped. That's the same
+			// for all protocol functions though, which suggests that ought
+			// to be handled centrally someplace, and not individually for
+			// each request. As it is, in any case, it does not seem to
+			// make a difference in vscode whether send one here or not.
+
+		}
+
 	}
 
 
@@ -374,6 +399,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 			.catch(err => {
 				const [ error = err ] = err.errors || [];
 				this.sendEvent(new OutputEvent(`ERR>setFunctionBreakPointsRequest error: ${error.message}\n`));
+				response.success = false;
 				this.sendResponse(response);
 			});
 	}
@@ -402,6 +428,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 			.catch((err) => {
 				const [ error = err ] = err.errors || [];
 				this.sendEvent(new OutputEvent(`ERR>setVariableRequest error: ${error.message}\n`));
+				response.success = false;
 				this.sendResponse(response);
 			});
 	}
@@ -433,6 +460,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 					this.sendEvent(new OutputEvent(`ERR>StepOut error: ${error.message}\n`));
 					this.sendEvent(new TerminatedEvent());
 				}
+				response.success = false;
 				this.sendResponse(response);
 			});
 	}
@@ -464,6 +492,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 					this.sendEvent(new OutputEvent(`ERR>StepIn error: ${error.message}\n`));
 					this.sendEvent(new TerminatedEvent());
 				}
+				response.success = false;
 				this.sendResponse(response);
 			});
 	}
@@ -488,7 +517,10 @@ export class PerlDebugSession extends LoggingDebugSession {
 	protected restartRequest(response: DebugProtocol.RestartResponse, args: DebugProtocol.RestartArguments): void {
 		this.restartRequestAsync(response, args)
 			.then(res => this.sendResponse(res))
-			.catch(err => this.sendResponse(response));
+			.catch(err => {
+				response.success = false;
+				this.sendResponse(response);
+			});
 	}
 
 	/**
@@ -550,7 +582,10 @@ export class PerlDebugSession extends LoggingDebugSession {
 	protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): void {
 		this.setBreakPointsRequestAsync(response, args)
 			.then(res => this.sendResponse(res))
-			.catch(err => this.sendResponse(response));
+			.catch(err => {
+				response.success = false;
+				this.sendResponse(response)
+			});
 	}
 
 	/**
@@ -580,6 +615,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 					this.sendEvent(new OutputEvent(`ERR>Next error: ${error.message}\n`));
 					this.sendEvent(new TerminatedEvent());
 				}
+				response.success = false;
 				this.sendResponse(response);
 			});
 	}
@@ -589,6 +625,20 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 * Continue
 	 */
 	protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
+
+		// NOTE(bh): "Please note: a debug adapter is not expected to
+		// send this event in response to a request that implies that
+		// execution continues, e.g. ‘launch’ or ‘continue’." -- but in
+		// our case sending the `c` command to the debugger is never
+		// acknowledged by the debugger, we cannot tell if it succeeded
+		// and the promise below is resolved only once the debugger has
+		// halted execution of the debuggee again. Without a response to
+		// the `continueRequest`, vscode does not offer users a `pause`
+		// button, so without sending this event, we cannot pause from
+		// the debug user interface. So we send the event...
+
+		this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
+
 		this.perlDebugger.request('c')
 			.then((res) => {
 				if (res.ln) {
@@ -610,6 +660,8 @@ export class PerlDebugSession extends LoggingDebugSession {
 					this.sendEvent(new OutputEvent(`ERR>Continue error: ${error.message}\n`));
 					this.sendEvent(new TerminatedEvent());
 				}
+
+				response.success = false;
 				this.sendResponse(response);
 			});
 	}
@@ -677,6 +729,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 				}
 			})
 			.catch(() => {
+				response.success = false;
 				this.sendResponse(response);
 			});
 	}
@@ -856,6 +909,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 			.catch(err => {
 				const [ error = err ] = err.errors || [];
 				this.sendEvent(new OutputEvent(`--->Trace error...${error.message}\n`));
+				response.success = false;
 				response.body = {
 					stackFrames: [],
 					totalFrames: 0
@@ -908,6 +962,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 				const [ error = err ] = err.errors || [];
 				this.sendEvent(new OutputEvent(`--->Loaded sources request error...${error.message}\n`));
+				response.success = false;
 				response.body = {
 					sources: [
 					]
@@ -949,9 +1004,10 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 				const [ error = err ] = err.errors || [];
 				this.sendEvent(new OutputEvent(`--->Source request error...${error.message}\n`));
+				response.success = false;
 				response.body = {
 					content: `# error`,
-					mimeType: `text/vnd.vscode-perl-debug.error`
+					mimeType: `text/vnd.vscode-perl-debug.error`,
 				};
 				this.sendResponse(response);
 
