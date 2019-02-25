@@ -50,7 +50,7 @@ function handleAttachableEvent(
 	const config: vscode.DebugConfiguration = {
 		...vscode.debug.activeDebugSession.configuration,
 		type: 'perl',
-		request: 'launch',
+		request: 'attach',
 		name: 'auto-attach',
 		port: event.body.port,
 		"console": "none",
@@ -168,6 +168,11 @@ class PerlDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 		if (config.autoAttachChildren === undefined) {
 			config.autoAttachChildren = true;
 		}
+
+		// map config.inc as leading -I execArgs
+		config.execArgs = (config.inc || [])
+			.map(d => `-I${d}`)
+			.concat(config.execArgs || []);
 
 		return config;
 	}

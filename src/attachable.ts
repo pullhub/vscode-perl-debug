@@ -91,15 +91,17 @@ export class Attachable extends EventEmitter {
 		});
 
 		this.kill = () => {
-			server.removeAllListeners();
-			this.removeAllListeners();
 
 			if (client) {
+				client.removeAllListeners();
 				client.destroy();
 				client = null;
 			}
 
+			server.removeAllListeners();
 			server.close();
+			this.removeAllListeners();
+
 		};
 
 	}

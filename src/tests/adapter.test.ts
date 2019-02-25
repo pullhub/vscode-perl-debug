@@ -12,7 +12,7 @@ import {DebugProtocol} from 'vscode-debugprotocol';
 
 describe('Perl debug Adapter', () => {
 
-	const DEBUG_ADAPTER = './out/perlDebug.js';
+	const DEBUG_ADAPTER = './out/debugAdapter.js';
 
 	const PROJECT_ROOT = Path.dirname(Path.dirname(__dirname));
 	const DATA_ROOT = Path.join(PROJECT_ROOT, 'src', 'tests', 'data');
@@ -130,7 +130,7 @@ describe('Perl debug Adapter', () => {
 			]);
 		});
 
-		it.skip('should stop on entry', async () => {
+		it('should stop on entry', async () => {
 
 			const PROGRAM = FILE_FAST_TEST_PL;
 
@@ -151,6 +151,7 @@ describe('Perl debug Adapter', () => {
 		});
 	});
 
+<<<<<<< HEAD
 	describe('pause', () => {
 
 		it('should be able to pause programs', async () => {
@@ -158,12 +159,20 @@ describe('Perl debug Adapter', () => {
 
 			// NOTE(bh): This test is probably expected to fail when test
 			// and adapter run in the same process?
+=======
+	describe.skip('setFunctionBreakpoints', () => {
+
+		it('should stop on a function', async () => {
+
+			const PROGRAM = FILE_FAST_TEST_PL;
+>>>>>>> b2b3878... feat(function-breakpoints): add/fix function breakpoints
 
 			await dc.launch(Configuration({
-				program: PROGRAM,
+				program: FILE_LONG_RUNNING_PL,
 				stopOnEntry: true
 			}));
 
+<<<<<<< HEAD
 			dc.continueRequest({
 				threadId: undefined
 			});
@@ -198,6 +207,74 @@ describe('Perl debug Adapter', () => {
 		});
 	});
 
+<<<<<<< HEAD
+=======
+=======
+	describe('setFunctionBreakpoints', () => {
+
+		it('should stop on a function', async () => {
+
+			const PROGRAM = FILE_FAST_TEST_PL;
+
+			await dc.launch(Configuration({
+				program: PROGRAM,
+				stopOnEntry: true
+			}));
+
+>>>>>>> 46c188a... enable two tests
+			await dc.waitForEvent('stopped');
+
+			await dc.setFunctionBreakpointsRequest({
+				breakpoints: [{
+					name: 'Module::test'
+				}]
+			});
+
+			dc.waitForEvent('stopped').then(async (x) => {
+
+				const st = await dc.stackTraceRequest({
+					threadId: undefined
+				});
+
+				assert.ok(
+					st.body.stackFrames.filter(x => {
+						return (
+							x.source.path.endsWith('Module.pm')
+							&&
+							x.line === 4
+						);
+					}).length > 0
+				);
+
+				// Clear breakpoints
+				await dc.setFunctionBreakpointsRequest({
+					breakpoints: []
+				});
+
+				// Should now run to completion
+				await Promise.all([
+					dc.continueRequest({
+						threadId: undefined
+					}),
+					dc.waitForEvent('terminated')
+				]);
+
+			}).catch(x => {
+
+				assert.fail('did not break on function');
+
+			});
+
+			await dc.continueRequest({
+				threadId: undefined
+			});
+
+		});
+
+	});
+
+
+>>>>>>> b2b3878... feat(function-breakpoints): add/fix function breakpoints
 	// xxx: Need to figure out this test
 	// hint: It might be a missing "stop" event - is the application run?
 	describe.skip('setBreakpoints', () => {

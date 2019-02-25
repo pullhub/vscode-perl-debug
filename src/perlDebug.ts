@@ -65,7 +65,9 @@ export class PerlDebugSession extends LoggingDebugSession {
 	}
 
 	private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
-	private _functionBreakPoints: string[] = [];
+
+	private _functionBreakPoints: Map<string, DebugProtocol.Breakpoint>
+		= new Map<string, DebugProtocol.Breakpoint>();
 
 	private _loadedSources = new Map<string, Source>();
 
@@ -151,16 +153,12 @@ export class PerlDebugSession extends LoggingDebugSession {
 				// make VS Code to show a 'step back' button
 				response.body.supportsStepBack = false;
 
-				response.body.supportsFunctionBreakpoints = false;
+				response.body.supportsFunctionBreakpoints = true;
 
 				response.body.supportsLoadedSourcesRequest = true;
 
 				this.sendResponse(response);
 
-				// since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
-				// we request them early by sending an 'initializeRequest' to the frontend.
-				// The frontend will end the configuration sequence by calling 'configurationDone' request.
-				this.sendEvent(new InitializedEvent());
 			});
 	}
 
@@ -175,21 +173,29 @@ export class PerlDebugSession extends LoggingDebugSession {
 		this._configurationDone.notify();
 	}
 
-	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: LaunchRequestArguments) {
+	protected async launchRequest(
+		response: DebugProtocol.LaunchResponse,
+		args: LaunchRequestArguments
+	) {
 		this.launchAndAttachRequest(response, args);
 	}
 
-	private async launchAndAttachRequest(response: DebugProtocol.LaunchResponse, args: LaunchRequestArguments) {
+	protected async attachRequest(
+		response: DebugProtocol.AttachResponse,
+		args: DebugProtocol.AttachRequestArguments
+	) {
+		this.sendEvent(new OutputEvent('attachRequest\n'));
+		this.launchAndAttachRequest(response, <LaunchRequestArguments>args);
+	}
+
+	private async launchAndAttachRequest(
+		response: DebugProtocol.Response,
+		args: LaunchRequestArguments
+	) {
 
 		this.rootPath = args.root;
 
-		const inc = args.inc && args.inc.length ? args.inc.map(directory => `-I${directory}`) : [];
-		const execArgs = [].concat(args.execArgs || [], inc);
-		const programArguments = args.args || [];
-
 		logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
-
-		await this._configurationDone.wait(1000);
 
 		this.perlDebugger.removeAllListeners('perl-debug.streamcatcher.data');
 		this.perlDebugger.removeAllListeners('perl-debug.streamcatcher.write');
@@ -212,14 +218,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 		const launchResponse = await this.perlDebugger.launchRequest(
 			args.program,
 			args.root,
-			execArgs,
+			args.execArgs,
 			{
 				exec: args.exec,
-				args: programArguments,
+				args: args.args || [],
 				env: {
-					PATH: process.env.PATH || '',
-					// PERL5OPT: process.env.PERL5OPT || '',
-					PERL5LIB: process.env.PERL5LIB || '',
 					...args.env
 				},
 				port: args.port || undefined,
@@ -232,6 +235,20 @@ export class PerlDebugSession extends LoggingDebugSession {
 			// Needs a reference to the session for `runInTerminal`
 			this
 		);
+
+		// NOTE(bh): This extension used to send the `InitializedEvent`
+		// at the beginning of the `initializeRequest`. That was taken
+		// as a signal that we can accept configurations right away, but
+		// we actually need to talk to the debugger to set breakpoints
+		// without buffering them. Fixed in part thanks to the help in
+		// https://github.com/Microsoft/vscode/issues/69317
+
+		this.sendEvent(new InitializedEvent());
+
+		// With the event sent vscode should now send us breakpoint and
+		// other configuration requests and signals us that it done doing
+		// so with a `configurationDoneRequest`, so we wait here for it.
+		await this._configurationDone.wait(1000);
 
 		if (args.stopOnEntry) {
 			if (launchResponse.ln) {
@@ -352,41 +369,117 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	}
 
+	private isValidFunctionName(name: string): boolean {
+		return /^[':A-Za-z_][':\w]*$/.test(name);
+	}
+
+	private escapeForSingleQuotes(unescaped: string): string {
+		return unescaped.replace(
+			/([\\'])/g,
+			'\\$1'
+		);
+	}
+
+	private async setFunctionBreakPointAsync(
+		bp: DebugProtocol.FunctionBreakpoint
+	): Promise<DebugProtocol.Breakpoint> {
 
 
+		if (!this.isValidFunctionName(bp.name)) {
+
+			// Report an unverified breakpoint when there is an attempt to
+			// set a function breakpoint on something that cannot be a Perl
+			// function; we cannot pass illegal names like `12345` to the
+			// debugger as it might misinterpret it as something other than
+			// a function breakpoint request.
+
+			return new Breakpoint(false);
+
+		}
+
+		const res = await this.perlDebugger.request(`b ${bp.name}`);
+
+		if (/Subroutine \S+ not found/.test(res.data[0])) {
+			// Unverified (and ignored by the debugger), but see below.
+		}
+
+		this.sendEvent(new OutputEvent(
+			`Adding function breakpoint on ${bp.name}\n`
+		));
+
+		// NOTE(bh): This is a simple attempt to get file and line
+		// information about where the sub is defined, at least to
+		// some extent, by going through `%DB::sub`, assuming it has
+		// already been loaded and has not been defined in unusal
+		// ways. Not sure if vscode actually uses the values though.
+
+		const pathPos = await this.perlDebugger.getExpressionValue(
+			`$DB::sub{'${this.escapeForSingleQuotes(bp.name)}'}`
+		);
+
+		const [ bpWhole, bpFile, bpFirst, bpLast ] = pathPos
+			? pathPos.match( /(.*):(\d+)-(\d+)$/ )
+			: [undefined, undefined, undefined, undefined];
+
+		return new Breakpoint(
+			!!pathPos,
+			parseInt(bpFirst),
+			undefined,
+			new Source(
+				bpFile,
+				bpFile,
+			)
+		);
+
+	}
 
 	private async setFunctionBreakPointsRequestAsync(response: DebugProtocol.SetFunctionBreakpointsResponse, args: DebugProtocol.SetFunctionBreakpointsArguments): Promise<DebugProtocol.SetFunctionBreakpointsResponse> {
-		const breakpoints: string[] = [];
-		const newBreakpoints: string[] = args.breakpoints.map(bp => { return bp.name });
-		const neoBreakpoints: DebugProtocol.FunctionBreakpoint[] = [];
 
-		for (let i = 0; i < this._functionBreakPoints.length; i++) {
-			const name = this._functionBreakPoints[i];
-			if (newBreakpoints.indexOf(name) < 0) {
-				this.sendEvent(new OutputEvent(`Remove ${name}\n`));
-				await this.perlDebugger.request(`B ${name}`);
-			}
+		// FIXME(bh): It is not clear yet how to set breakpoints on subs
+		// that are not yet loaded at program start time. Global watch
+		// expressions can be used like so:
+		//
+		//   % perl -d -e0
+		//
+		//   Loading DB routines from perl5db.pl version 1.53
+		//   Editor support available.
+		//
+		//   Enter h or 'h h' for help, or 'man perldebug' for more help.
+		//
+		//   main::(-e:1):	0
+		//   	DB<1> w *Data::Dumper::Dumper{CODE}
+		//   	DB<2> use Data::Dumper
+		//
+		//   	DB<3> r
+		//   Watchpoint 0:	*Data::Dumper::Dumper{CODE} changed:
+		//   		old value:	''
+		//   		new value:	'CODE(0x55f9e2629688)'
+		//
+		// But possibly with considerable performance impact as any
+		// watch expression would put the debugger in trace mode? Might
+		// make sense to offer that behind a `launch.json` option.
+
+		for (const [name, bp] of this._functionBreakPoints.entries()) {
+
+			// Remove breakpoint
+			await this.perlDebugger.request(`B ${name}`);
+
 		}
 
-		for (let i = 0; i < args.breakpoints.length; i++) {
-			const bp = args.breakpoints[i];
-			if (this._functionBreakPoints.indexOf(bp.name) < 0) {
-				breakpoints.push(bp.name);
-				const res = await this.perlDebugger.request(`b ${bp.name}`);
+		this._functionBreakPoints.clear();
 
-				this.sendEvent(new OutputEvent(`Add ${bp.name}\n`));
-				const neoBreakpoint = <DebugProtocol.FunctionBreakpoint>{name: bp.name};
-				neoBreakpoints.push(neoBreakpoint);
-				response.body.breakpoints = [new Breakpoint(true, 4, 0, new Source('Module.pm', join(/* this.filepath, */ 'Module.pm')) )];
-				this.sendResponse(response);
+		for (const bp of args.breakpoints) {
 
-				this.sendEvent(new OutputEvent(`Add ${bp.name}\n`));
-			} else {
-				neoBreakpoints.push(bp);
-			}
+			this._functionBreakPoints.set(
+				bp.name,
+				await this.setFunctionBreakPointAsync(bp)
+			);
+
 		}
 
-		this._functionBreakPoints = breakpoints;
+		response.body = {
+			breakpoints: [...this._functionBreakPoints.values()]
+		};
 
 		return response;
 	}
@@ -875,6 +968,10 @@ export class PerlDebugSession extends LoggingDebugSession {
 			{}
 		);
 
+		// TODO(bh): Maybe re-set the function breakpoints from here, if
+		// there are any newly loaded sources there most probably are new
+		// functions, and we might be trying to break on one of them...
+
 		const stacktrace = await this.perlDebugger.getStackTrace();
 		const frames = new Array<StackFrame>();
 
@@ -1017,10 +1114,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	// Custom requests
 
-	protected customRequest(command: string, response: DebugProtocol.Response, args: any) {
+	protected customRequestx(command: string, response: DebugProtocol.Response, args: any) {
 		if (command === '...') {
 			// this....(response, args);
 		}
+		response.success = false;
 	}
 
 }
