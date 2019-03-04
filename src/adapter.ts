@@ -14,6 +14,7 @@ import {
 	Event as VscodeEvent
 } from 'vscode-debugadapter';
 import { EventEmitter } from 'events';
+import { AttachSession } from './attachSession';
 
 interface ResponseError {
 	filename: string,
@@ -271,7 +272,11 @@ export class perlDebuggerConnection extends EventEmitter {
 		// local debug sessions, the port is not exposed externally.
 		const bindHost = 'localhost';
 
-		this.perlDebugger = new RemoteSession(0, bindHost);
+		this.perlDebugger = new RemoteSession(
+			0,
+			bindHost,
+			options.autoAttachChildren
+		);
 
 		this.logOutput(this.perlDebugger.title());
 
@@ -310,6 +315,26 @@ export class perlDebuggerConnection extends EventEmitter {
 
 	}
 
+	private async launchRequestAttach(
+		filename: string,
+		cwd: string,
+		args: string[] = [],
+		options:LaunchOptions = {}
+	): Promise<void> {
+
+		const bindHost = 'localhost';
+
+		// ???
+		this.isRemote = false;
+
+		this.perlDebugger = new AttachSession(options.port, bindHost);
+
+		await new Promise(
+			resolve => this.perlDebugger.on("connect", res => resolve(res))
+		);
+
+	}
+
 	private async launchRequestNone(
 		filename: string,
 		cwd: string,
@@ -320,7 +345,11 @@ export class perlDebuggerConnection extends EventEmitter {
 		const bindHost = 'localhost';
 
 		this.isRemote = false;
-		this.perlDebugger = new RemoteSession(0, bindHost);
+		this.perlDebugger = new RemoteSession(
+			0,
+			bindHost,
+			options.autoAttachChildren
+		);
 
 		this.logOutput(this.perlDebugger.title());
 
@@ -405,7 +434,11 @@ export class perlDebuggerConnection extends EventEmitter {
 				this.logOutput(
 					`Waiting for remote debugger to connect on port "${options.port}"`
 				);
-				this.perlDebugger = new RemoteSession(options.port);
+				this.perlDebugger = new RemoteSession(
+					options.port,
+					'0.0.0.0',
+					options.autoAttachChildren
+				);
 				this.isRemote = true;
 
 				// FIXME(bh): this does not await the listening event since we
@@ -418,9 +451,15 @@ export class perlDebuggerConnection extends EventEmitter {
 
 			case "none": {
 
-				await this.launchRequestNone(
-					filename, cwd, args, options
-				);
+				if (options.port) {
+					await this.launchRequestAttach(
+						filename, cwd, args, options
+					);
+				} else {
+					await this.launchRequestNone(
+						filename, cwd, args, options
+					);
+				}
 
 				break;
 			}
@@ -457,6 +496,15 @@ export class perlDebuggerConnection extends EventEmitter {
 			this.commandRunning = '';
 			this.logOutput(`Debugger connection closed`);
 			this.emit('perl-debug.close', code);
+		});
+
+		this.perlDebugger.on(
+			'perl-debug.attachable.listening',
+			address => {
+				this.emit(
+					'perl-debug.attachable.listening',
+					address
+				);
 		});
 
 		const data = await this.streamCatcher.launch(

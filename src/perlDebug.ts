@@ -43,6 +43,10 @@ export interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArgum
 	console?: string,
 	/** Log raw I/O with debugger in output channel */
 	debugRaw?: boolean,
+	/** Attach to forked children */
+	autoAttachChildren?: boolean,
+	/** Automatically stop children after launch. If not specified, children do not stop. */
+	stopChildrenOnEntry?: boolean;
 }
 
 export class PerlDebugSession extends LoggingDebugSession {
@@ -119,13 +123,24 @@ export class PerlDebugSession extends LoggingDebugSession {
 			this.sendEvent(new Event('perl-debug.debug', x));
 		});
 
+		this.perlDebugger.on(
+			'perl-debug.attachable.listening',
+			(...x) => {
+				this.sendEvent(
+					new Event(
+						'perl-debug.attachable.listening', ...x
+						// {
+						// 	port: address.port,
+						// 	family: address.family,
+						// 	address: address.address
+						// }
+					)
+				);
+			}
+		);
+
 		this.perlDebugger.initializeRequest()
 			.then(() => {
-				// since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
-				// we request them early by sending an 'initializeRequest' to the frontend.
-				// The frontend will end the configuration sequence by calling 'configurationDone' request.
-				this.sendEvent(new InitializedEvent());
-
 				// This debug adapter implements the configurationDoneRequest.
 				response.body.supportsConfigurationDoneRequest = true;
 
@@ -140,6 +155,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 				response.body.supportsLoadedSourcesRequest = true;
 
 				this.sendResponse(response);
+
+				// since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
+				// we request them early by sending an 'initializeRequest' to the frontend.
+				// The frontend will end the configuration sequence by calling 'configurationDone' request.
+				this.sendEvent(new InitializedEvent());
 			});
 	}
 
@@ -155,6 +175,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 	}
 
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: LaunchRequestArguments) {
+		this.launchAndAttachRequest(response, args);
+	}
+
+	private async launchAndAttachRequest(response: DebugProtocol.LaunchResponse, args: LaunchRequestArguments) {
+
 		this.rootPath = args.root;
 
 		const inc = args.inc && args.inc.length ? args.inc.map(directory => `-I${directory}`) : [];
@@ -167,6 +192,10 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 		this.perlDebugger.removeAllListeners('perl-debug.streamcatcher.data');
 		this.perlDebugger.removeAllListeners('perl-debug.streamcatcher.write');
+
+		// FIXME(bh): Should only be done if this is a new main session.
+		// Perhaps use a private launch config option to indicate if this
+		// is a child session?
 		this.sendEvent(new Event('perl-debug.streamcatcher.clear'));
 
 		if (args.debugRaw) {
@@ -193,7 +222,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 					...args.env
 				},
 				port: args.port || undefined,
-				console: args.console
+				console: args.console,
+				autoAttachChildren: args.autoAttachChildren,
+
+				// FIXME: figure out the split between LaunchOptions
+				// stopChildrenOnEntry: args.stopChildrenOnEntry
 			},
 			// Needs a reference to the session for `runInTerminal`
 			this
@@ -215,6 +248,12 @@ export class PerlDebugSession extends LoggingDebugSession {
 	}
 
 	protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
+
+		// TODO(bh): vscode actually shows the thread name in the user
+		// interface during multi-session debugging, at least until
+		// https://github.com/Microsoft/vscode/issues/69752 is addressed,
+		// so it might be a good idea to set a better name here.
+
 		// xxx: Not sure if this is sufficient to levarage multi cores?
 		// return the default thread
 		response.body = {
@@ -234,8 +273,24 @@ export class PerlDebugSession extends LoggingDebugSession {
  * * step out
  * * step back
  * * reverse continue
+ * * data breakpoints (https://github.com/raix/vscode-perl-debug/issues/4)
  */
 
+	/**
+	 * Data breakpoints
+	 */
+	protected setDataBreakpointsRequest(response: DebugProtocol.SetDataBreakpointsResponse, args: DebugProtocol.SetDataBreakpointsArguments) {
+		response.success = false;
+		this.sendResponse(response);
+	}
+
+	/**
+	 * Data breakpoint info
+	 */
+	protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments) {
+		response.success = false;
+		this.sendResponse(response);
+	}
 
 	/**
 	 * Reverse continue
@@ -904,7 +959,13 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	}
 
-}
+	// Custom requests
 
-DebugSession.run(PerlDebugSession);
+	protected customRequest(command: string, response: DebugProtocol.Response, args: any) {
+		if (command === '...') {
+			// this....(response, args);
+		}
+	}
+
+}
 

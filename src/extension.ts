@@ -1,11 +1,20 @@
 'use strict';
 
+import * as Net from 'net';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {
 	WorkspaceFolder, DebugConfiguration, ProviderResult,
 	CancellationToken
 } from 'vscode';
+import { PerlDebugSession } from './perlDebug';
+
+/*
+ * Set the following compile time flag to true if the
+ * debug adapter should run inside the extension host.
+ * Please note: the test suite does not (yet) work in this mode.
+ */
+const EMBED_DEBUG_ADAPTER = true;
 
 let perlDebugOutputChannel: vscode.OutputChannel | undefined;
 let streamCatcherOutputChannel: vscode.OutputChannel | undefined;
@@ -34,6 +43,32 @@ function handleStreamCatcherEvent(
 
 }
 
+function handleAttachableEvent(
+	event: vscode.DebugSessionCustomEvent
+) {
+
+	const config: vscode.DebugConfiguration = {
+		...vscode.debug.activeDebugSession.configuration,
+		type: 'perl',
+		request: 'launch',
+		name: 'auto-attach',
+		port: event.body.port,
+		"console": "none",
+		debugServer: null,
+		autoAttachChildren: true
+	};
+
+	vscode.debug.startDebugging(
+		undefined,
+		config
+	).then((...x) => {
+		vscode.debug.activeDebugConsole.appendLine(
+			`Child session via ${event.body.address}:${event.body.port}`
+		);
+	});
+
+}
+
 function handleCustomEvent(event: vscode.DebugSessionCustomEvent) {
 
 	if (event.session.type !== 'perl') {
@@ -44,6 +79,9 @@ function handleCustomEvent(event: vscode.DebugSessionCustomEvent) {
 		case 'perl-debug.streamcatcher.write':
 		case 'perl-debug.streamcatcher.data':
 			handleStreamCatcherEvent(event);
+			break;
+		case 'perl-debug.attachable.listening':
+			handleAttachableEvent(event);
 			break;
 		case 'perl-debug.streamcatcher.clear':
 			if (streamCatcherOutputChannel) {
@@ -71,6 +109,12 @@ export function activate(context: vscode.ExtensionContext) {
 			handleCustomEvent
 		)
 	);
+
+	if (EMBED_DEBUG_ADAPTER) {
+		const factory = new PerlDebugAdapterDescriptorFactory();
+		context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('perl', factory));
+		context.subscriptions.push(factory);
+	}
 
 }
 
@@ -107,6 +151,12 @@ class PerlDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 			return undefined;
 		}
 
+		// TODO(bh): Given that `package.json` specifies various default
+		// values for the launch configuration, perhaps this should start
+		// with the defaults, merge in the actually specified options,
+		// and then make final adjustments? Otherwise there is a chance
+		// default values end up being ignored.
+
 		if (config.port && !config.console) {
 			config.console = 'remote';
 		}
@@ -115,6 +165,40 @@ class PerlDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 			config.console = 'integratedTerminal';
 		}
 
+		if (config.autoAttachChildren === undefined) {
+			config.autoAttachChildren = true;
+		}
+
 		return config;
+	}
+}
+
+
+class PerlDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
+
+	private server?: Net.Server;
+
+	createDebugAdapterDescriptor(
+		session: vscode.DebugSession,
+		executable: vscode.DebugAdapterExecutable | undefined
+	): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
+
+		if (!this.server) {
+			// start listening on a random port
+			this.server = Net.createServer(socket => {
+				const session = new PerlDebugSession();
+				session.setRunAsServer(true);
+				session.start(<NodeJS.ReadableStream>socket, socket);
+			}).listen(0);
+		}
+
+		// make VS Code connect to debug server
+		return new vscode.DebugAdapterServer(this.server.address().port);
+	}
+
+	dispose() {
+		if (this.server) {
+			this.server.close();
+		}
 	}
 }
