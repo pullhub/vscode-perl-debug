@@ -1,7 +1,9 @@
+import * as fs from 'fs';
 import * as net from 'net';
 import {spawn} from 'child_process';
 import { Readable, Writable } from 'stream';
 import { EventEmitter } from 'events';
+import { fstat } from 'fs';
 
 export class Attachable extends EventEmitter {
 	public kill: Function;
@@ -70,18 +72,18 @@ export class Attachable extends EventEmitter {
 			});
 
 			base.on('close', error => {
-				socket.end();
+				socket.destroy();
 			});
 
 			socket.on('close', error => {
-				base.end();
+				base.destroy();
+				this.kill();
 			});
 		});
 
 		// Listen to port make it remotely available
 		server.listen(0, 'localhost', () => {
 			this.port = server.address().port;
-			console.log(`ATTACHABLE ON ${this.port}\n`);
 			this.emit('listening', server.address());
 		});
 

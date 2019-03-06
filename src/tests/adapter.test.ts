@@ -151,7 +151,6 @@ describe('Perl debug Adapter', () => {
 		});
 	});
 
-<<<<<<< HEAD
 	describe('pause', () => {
 
 		it('should be able to pause programs', async () => {
@@ -159,20 +158,12 @@ describe('Perl debug Adapter', () => {
 
 			// NOTE(bh): This test is probably expected to fail when test
 			// and adapter run in the same process?
-=======
-	describe.skip('setFunctionBreakpoints', () => {
-
-		it('should stop on a function', async () => {
-
-			const PROGRAM = FILE_FAST_TEST_PL;
->>>>>>> b2b3878... feat(function-breakpoints): add/fix function breakpoints
 
 			await dc.launch(Configuration({
 				program: FILE_LONG_RUNNING_PL,
 				stopOnEntry: true
 			}));
 
-<<<<<<< HEAD
 			dc.continueRequest({
 				threadId: undefined
 			});
@@ -207,9 +198,6 @@ describe('Perl debug Adapter', () => {
 		});
 	});
 
-<<<<<<< HEAD
-=======
-=======
 	describe('setFunctionBreakpoints', () => {
 
 		it('should stop on a function', async () => {
@@ -221,7 +209,6 @@ describe('Perl debug Adapter', () => {
 				stopOnEntry: true
 			}));
 
->>>>>>> 46c188a... enable two tests
 			await dc.waitForEvent('stopped');
 
 			await dc.setFunctionBreakpointsRequest({
@@ -270,11 +257,8 @@ describe('Perl debug Adapter', () => {
 			});
 
 		});
-
 	});
 
-
->>>>>>> b2b3878... feat(function-breakpoints): add/fix function breakpoints
 	// xxx: Need to figure out this test
 	// hint: It might be a missing "stop" event - is the application run?
 	describe.skip('setBreakpoints', () => {

@@ -14,10 +14,34 @@ import { PerlDebugSession } from './perlDebug';
  * debug adapter should run inside the extension host.
  * Please note: the test suite does not (yet) work in this mode.
  */
-const EMBED_DEBUG_ADAPTER = true;
+const EMBED_DEBUG_ADAPTER = false;
 
 let perlDebugOutputChannel: vscode.OutputChannel | undefined;
 let streamCatcherOutputChannel: vscode.OutputChannel | undefined;
+
+function handlePerlDebugEvent(
+	event: vscode.DebugSessionCustomEvent
+) {
+
+	if (!perlDebugOutputChannel) {
+
+		perlDebugOutputChannel = vscode.window.createOutputChannel(
+			'Perl Debug Log'
+		);
+
+		perlDebugOutputChannel.show(true);
+
+	}
+
+	perlDebugOutputChannel.appendLine(
+		JSON.stringify([
+			new Date().toISOString(),
+			event.event,
+			...event.body,
+		])
+	);
+
+}
 
 function handleStreamCatcherEvent(
 	event: vscode.DebugSessionCustomEvent
@@ -47,15 +71,39 @@ function handleAttachableEvent(
 	event: vscode.DebugSessionCustomEvent
 ) {
 
+	// FIXME(bh): When the user terminates the first/main process, and
+	// perhaps even if it exits before child or other processes do, we
+	// sever their connections to the extension, but probably do not
+	// kill them properly. It is not clear whether they should in fact
+	// be killed, it might be better to tell the user that terminating
+	// the main debug adapter instance in that situation is not a good
+	// idea. Sadly vscode does not offer many better alternatives here,
+	// short of hosting the main server that accepts `perl5db.pl`
+	// connections in the extension, but then we would not have access
+	// to the selected launch configuration, or would need more hacks
+	// to get that (when the user has a pre-configured port specified).
+
 	const config: vscode.DebugConfiguration = {
 		...vscode.debug.activeDebugSession.configuration,
 		type: 'perl',
-		request: 'attach',
-		name: 'auto-attach',
-		port: event.body.port,
-		"console": "none",
+		request: 'launch',
+
+		// Sadly better https://github.com/Microsoft/vscode/issues/70104
+		// names do not seem possible at the moment, but that may change.
+		name: `auto ${event.body.src.address}:${event.body.src.port}`,
+
+		port: event.body.dst.port,
+
+		// The `console` attribute is abused here to make a pseudo-attach
+		// request. The main reason is that actual `attachRequest` setups
+		// would cause vscode to offer a "disconnect" button rather than
+		// a stop/terminate button in the debugging toolbar, which is not
+		// what would happen when users press it, since we actually will
+		// try to terminate the debuggee.
+		console: "_attach",
+
+		// FIXME(bh): not sure if this actually needs to be overridden.
 		debugServer: null,
-		autoAttachChildren: true
 	};
 
 	vscode.debug.startDebugging(
@@ -63,7 +111,7 @@ function handleAttachableEvent(
 		config
 	).then((...x) => {
 		vscode.debug.activeDebugConsole.appendLine(
-			`Child session via ${event.body.address}:${event.body.port}`
+			`Child session ${event.body.src.address}:${event.body.src.port}`
 		);
 	});
 
@@ -82,6 +130,9 @@ function handleCustomEvent(event: vscode.DebugSessionCustomEvent) {
 			break;
 		case 'perl-debug.attachable.listening':
 			handleAttachableEvent(event);
+			break;
+		case 'perl-debug.debug':
+			handlePerlDebugEvent(event);
 			break;
 		case 'perl-debug.streamcatcher.clear':
 			if (streamCatcherOutputChannel) {
@@ -161,12 +212,12 @@ class PerlDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 			config.console = 'remote';
 		}
 
-		if (!config.console) {
-			config.console = 'integratedTerminal';
+		if (!config.sessions) {
+			config.sessions = 'single';
 		}
 
-		if (config.autoAttachChildren === undefined) {
-			config.autoAttachChildren = true;
+		if (!config.console) {
+			config.console = 'integratedTerminal';
 		}
 
 		// map config.inc as leading -I execArgs

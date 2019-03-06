@@ -2,7 +2,7 @@ import * as net from 'net';
 import {spawn} from 'child_process';
 import { Readable, Writable } from 'stream';
 import { EventEmitter } from 'events';
-import { DebugSession, LaunchOptions } from './session';
+import { DebugSession } from './session';
 import { debuggerSignature } from './regExp';
 import { Attachable } from './attachable';
 
@@ -12,13 +12,12 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 	public stderr: Readable;
 	public kill: Function;
 	public title: Function;
-	public dump: Function;
 	public port: Number | null;
 
 	constructor(
 		port: number,
 		bindAddress: string = "0.0.0.0",
-		autoAttachChildren: boolean = true
+		sessions: string = 'single'
 	) {
 		super();
 
@@ -56,7 +55,7 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 				this.stdout.push(`Remote debugger at "${name}" connected at port ${port}.`);
 			} else {
 
-				if (autoAttachChildren) {
+				if (sessions && sessions !== 'single') {
 
 					// When a debuggee calls `fork()` the Perl debugger will
 					// fork the debuggee and try to connect to the same port
@@ -80,7 +79,14 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 					attachables.push(attachable);
 
 					attachable.on('listening', address => {
-						this.emit('perl-debug.attachable.listening', address);
+						this.emit('perl-debug.attachable.listening', {
+							src: {
+								address: socket.remoteAddress,
+								port: socket.remotePort,
+							},
+							via: socket.address(),
+							dst: address,
+						});
 					});
 
 					return;
@@ -154,9 +160,14 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 
 			server.close();
 		};
-		this.title = () => `Running debug server for remote session to connect on port "${port}"`;
-		this.dump = () => `debug server port ${port}`;
-		this.dump = () => `${server.address().address}:${server.address().port} serving ${client.remoteAddress}:${client.remotePort}`;
+		this.title = () => {
+			if (server && client) {
+				return `${server.address().address}:${server.address().port
+					} serving ${client.remoteAddress}:${client.remotePort}`;
+			} else {
+				return "Inactive RemoteSession";
+			}
+		};
 
 	}
 }

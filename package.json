@@ -10,7 +10,7 @@
   },
   "license": "MIT",
   "engines": {
-    "vscode": ">=1.31.0",
+    "vscode": ">=1.30.0",
     "node": ">=8.0.0"
   },
   "icon": "images/vscode-perl-debug.png",
@@ -103,7 +103,7 @@
       {
         "type": "perl",
         "label": "Perl Debug",
-        "program": "./out/perlDebug.js",
+        "program": "./out/debugAdapter.js",
         "runtime": "node",
         "languages": [
           "perl"
@@ -192,7 +192,8 @@
                   "integratedTerminal",
                   "externalTerminal",
                   "remote",
-                  "none"
+                  "none",
+                  "_attach"
                 ],
                 "description": "Where to launch the debug target",
                 "default": "integratedTerminal"
@@ -202,15 +203,20 @@
                 "description": "Log raw I/O with debugger in output channel",
                 "default": false
               },
-              "autoAttachChildren": {
+              "debugLog": {
                 "type": "boolean",
-                "description": "Attach to forked children",
-                "default": true
+                "description": "Log debug messages in output channel",
+                "default": false
               },
-              "stopChildrenOnEntry": {
-                "type": "boolean",
-                "description": "Automatically stop forked children after launch.",
-                "default": true
+              "sessions": {
+                "type": "string",
+                "description": "How to handle forked children or multiple connections",
+                "default": "single",
+                "enum": [
+                  "single",
+                  "watch",
+                  "break"
+                ]
               }
             }
           }
@@ -229,9 +235,9 @@
             "args": [],
             "env": {},
             "debugRaw": false,
+            "debugLog": false,
             "stopOnEntry": true,
-            "autoAttachChildren": true,
-            "stopChildrenOnEntry": true
+            "sessions": "single"
           },
           {
             "type": "perl",
@@ -241,7 +247,8 @@
             "program": "${workspaceFolder}/${relativeFile}",
             "root": "${workspaceRoot}/",
             "stopOnEntry": true,
-            "port": 5000
+            "port": 5000,
+            "sessions": "single"
           }
         ]
       }
