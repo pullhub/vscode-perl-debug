@@ -117,7 +117,6 @@ export class perlDebuggerConnection extends EventEmitter {
 
 	private filename?: string;
 	private rootPath?: string;
-	private currentfile?: string;
 
 	/**
 	 * Pass in the initial script and optional additional arguments for
@@ -260,6 +259,23 @@ export class perlDebuggerConnection extends EventEmitter {
 		return res;
 	}
 
+	private async attachRequest(
+		args: LaunchRequestArguments
+	): Promise<void> {
+
+		const bindHost = 'localhost';
+
+		// ???
+		this.isRemote = false;
+
+		this.perlDebugger = new AttachSession(args.port, bindHost);
+
+		await new Promise(
+			resolve => this.perlDebugger.on("connect", res => resolve(res))
+		);
+
+	}
+
 	private async launchRequestTerminal(
 		args: LaunchRequestArguments,
 		session: PerlDebugSession
@@ -321,23 +337,6 @@ export class perlDebuggerConnection extends EventEmitter {
 
 	}
 
-	private async launchRequestAttach(
-		args: LaunchRequestArguments
-	): Promise<void> {
-
-		const bindHost = 'localhost';
-
-		// ???
-		this.isRemote = false;
-
-		this.perlDebugger = new AttachSession(args.port, bindHost);
-
-		await new Promise(
-			resolve => this.perlDebugger.on("connect", res => resolve(res))
-		);
-
-	}
-
 	private async launchRequestNone(
 		options: LaunchRequestArguments
 	): Promise<void> {
@@ -373,38 +372,10 @@ export class perlDebuggerConnection extends EventEmitter {
 
 	}
 
-	async launchRequest(
+	async launchSession(
 		args: LaunchRequestArguments,
 		session: PerlDebugSession
-	): Promise<RequestResponse> {
-
-		this.rootPath = args.root;
-		this.filename = args.program;
-		this.currentfile = args.program;
-		const sourceFile = args.program;
-
-		this.logDebug(`Platform: ${process.platform}`);
-
-		Object.keys(args.env || {}).forEach(key => {
-			this.logDebug(`env.${key}: "${args.env[key]}"`);
-		});
-
-		// Verify file and folder existence
-		// xxx: We can improve the error handling
-
-		// FIXME(bh): does it make sense to have a source file here when
-		// we just create a server for a remote client to connect to? It
-		// seems it should be possible to `F5` without specifying a file.
-
-		if (!fs.existsSync(sourceFile)) {
-			this.logOutput( `Error: File ${sourceFile} not found`);
-		}
-
-		if (args.root && !fs.existsSync(args.root)) {
-			this.logOutput( `Error: Folder ${args.root} not found`);
-		}
-
-		this.logOutput(`Platform: ${process.platform}`);
+	) {
 
 		switch (args.console) {
 
@@ -450,7 +421,7 @@ export class perlDebuggerConnection extends EventEmitter {
 			case "none": {
 
 				if (args.port) {
-					await this.launchRequestAttach( args );
+					await this.attachRequest( args );
 				} else {
 					await this.launchRequestNone( args );
 				}
@@ -470,6 +441,44 @@ export class perlDebuggerConnection extends EventEmitter {
 			}
 
 		}
+
+	}
+
+	async launchRequest(
+		args: LaunchRequestArguments,
+		session: PerlDebugSession
+	): Promise<RequestResponse> {
+
+		this.rootPath = args.root;
+		this.filename = args.program;
+
+		this.logDebug(`Platform: ${process.platform}`);
+
+		Object.keys(args.env || {}).forEach(key => {
+			this.logDebug(`env.${key}: "${args.env[key]}"`);
+		});
+
+		// Verify file and folder existence
+		// xxx: We can improve the error handling
+
+		// FIXME(bh): does it make sense to have a source file here when
+		// we just create a server for a remote client to connect to? It
+		// seems it should be possible to `F5` without specifying a file.
+
+		// FIXME(bh): Check needs to account for args.root
+
+		if (!fs.existsSync(args.program)) {
+			this.logOutput( `Error: File ${args.program} not found`);
+		}
+
+		if (args.root && !fs.existsSync(args.root)) {
+			this.logOutput( `Error: Folder ${args.root} not found`);
+		}
+
+		this.logOutput(`Platform: ${process.platform}`);
+
+		// This is the actual launch
+		await this.launchSession(args, session);
 
 		this.commandRunning = this.perlDebugger.title();
 
@@ -597,7 +606,6 @@ export class perlDebuggerConnection extends EventEmitter {
 				throw new Error(res.data[0]);
 			}
 		}
-		this.currentfile = cleanFilename;
 		return res;
 	}
 
