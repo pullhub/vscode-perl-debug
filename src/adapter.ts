@@ -6,15 +6,17 @@ import {StreamCatcher} from './streamCatcher';
 import * as RX from './regExp';
 import variableParser, { ParsedVariable, ParsedVariableScope } from './variableParser';
 import { DebugSession } from './session';
+
 import { LocalSession } from './localSession';
 import { RemoteSession } from './remoteSession';
+import { AttachSession } from './attachSession';
+
 import { PerlDebugSession, LaunchRequestArguments } from './perlDebug';
 
 import {
 	Event as VscodeEvent
 } from 'vscode-debugadapter';
 import { EventEmitter } from 'events';
-import { AttachSession } from './attachSession';
 
 interface ResponseError {
 	filename: string,
@@ -259,10 +261,7 @@ export class perlDebuggerConnection extends EventEmitter {
 	}
 
 	private async launchRequestTerminal(
-		filename: string,
-		cwd: string,
-		args: string[] = [],
-		options:any = {},
+		args: LaunchRequestArguments,
 		session: PerlDebugSession
 	): Promise<void> {
 
@@ -276,7 +275,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		this.perlDebugger = new RemoteSession(
 			0,
 			bindHost,
-			options.autoAttachChildren
+			args.autoAttachChildren
 		);
 
 		this.logOutput(this.perlDebugger.title());
@@ -291,14 +290,20 @@ export class perlDebuggerConnection extends EventEmitter {
 		const response = await new Promise((resolve, reject) => {
 			session.runInTerminalRequest({
 				kind: (
-					options.console === "integratedTerminal"
+					args.console === "integratedTerminal"
 						? "integrated"
 						: "external"
 				),
-				cwd: cwd,
-				args: [options.exec, "-d", filename].concat(options.args),
+				cwd: args.root,
+				args: [
+					args.exec,
+					...args.execArgs,
+					"-d",
+					args.program,
+					...args.args
+				],
 				env: {
-					...options.env,
+					...args.env,
 
 					// TODO(bh): maybe merge user-specified options together
 					// with the RemotePort setting we need?
@@ -317,10 +322,7 @@ export class perlDebuggerConnection extends EventEmitter {
 	}
 
 	private async launchRequestAttach(
-		filename: string,
-		cwd: string,
-		args: string[] = [],
-		options:any = {}
+		args: LaunchRequestArguments
 	): Promise<void> {
 
 		const bindHost = 'localhost';
@@ -328,7 +330,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		// ???
 		this.isRemote = false;
 
-		this.perlDebugger = new AttachSession(options.port, bindHost);
+		this.perlDebugger = new AttachSession(args.port, bindHost);
 
 		await new Promise(
 			resolve => this.perlDebugger.on("connect", res => resolve(res))
@@ -337,10 +339,7 @@ export class perlDebuggerConnection extends EventEmitter {
 	}
 
 	private async launchRequestNone(
-		filename: string,
-		cwd: string,
-		args: string[] = [],
-		options:any = {}
+		options: LaunchRequestArguments
 	): Promise<void> {
 
 		const bindHost = 'localhost';
@@ -360,8 +359,8 @@ export class perlDebuggerConnection extends EventEmitter {
 
 		this.debuggee = new LocalSession({
 			...options,
-			program: filename,
-			root: cwd,
+			program: options.program,
+			root: options.root,
 			args: options.args,
 			env: {
 				...options.env,
@@ -379,30 +378,15 @@ export class perlDebuggerConnection extends EventEmitter {
 		session: PerlDebugSession
 	): Promise<RequestResponse> {
 
-		// Compatibility for old signature
-		const filename = args.program;
-		const cwd = args.root;
-		const execArgs = args.execArgs;
-		const options = {
-				exec: args.exec,
-				args: args.args || [],
-				env: {
-					...args.env
-				},
-				port: args.port || undefined,
-				console: args.console,
-				autoAttachChildren: args.autoAttachChildren,
-		};
-
-		this.rootPath = cwd;
-		this.filename = filename;
-		this.currentfile = filename;
-		const sourceFile = filename;
+		this.rootPath = args.root;
+		this.filename = args.program;
+		this.currentfile = args.program;
+		const sourceFile = args.program;
 
 		this.logDebug(`Platform: ${process.platform}`);
 
-		Object.keys(options.env || {}).forEach(key => {
-			this.logDebug(`env.${key}: "${options.env[key]}"`);
+		Object.keys(args.env || {}).forEach(key => {
+			this.logDebug(`env.${key}: "${args.env[key]}"`);
 		});
 
 		// Verify file and folder existence
@@ -416,13 +400,13 @@ export class perlDebuggerConnection extends EventEmitter {
 			this.logOutput( `Error: File ${sourceFile} not found`);
 		}
 
-		if (cwd && !fs.existsSync(cwd)) {
-			this.logOutput( `Error: Folder ${cwd} not found`);
+		if (args.root && !fs.existsSync(args.root)) {
+			this.logOutput( `Error: Folder ${args.root} not found`);
 		}
 
 		this.logOutput(`Platform: ${process.platform}`);
 
-		switch (options.console) {
+		switch (args.console) {
 
 			case "integratedTerminal":
 			case "externalTerminal": {
@@ -431,16 +415,14 @@ export class perlDebuggerConnection extends EventEmitter {
 
 					// FIXME(bh): better error handling.
 					this.logOutput(
-						`Error: console:${options.console} unavailable`
+						`Error: console:${args.console} unavailable`
 					);
 
 					break;
 
 				}
 
-				await this.launchRequestTerminal(
-					filename, cwd, execArgs, options, session
-				);
+				await this.launchRequestTerminal( args, session );
 
 				break;
 			}
@@ -448,12 +430,12 @@ export class perlDebuggerConnection extends EventEmitter {
 			case "remote": {
 
 				this.logOutput(
-					`Waiting for remote debugger to connect on port "${options.port}"`
+					`Waiting for remote debugger to connect on port "${args.port}"`
 				);
 				this.perlDebugger = new RemoteSession(
-					options.port,
+					args.port,
 					'0.0.0.0',
-					options.autoAttachChildren
+					args.autoAttachChildren
 				);
 				this.isRemote = true;
 
@@ -467,14 +449,10 @@ export class perlDebuggerConnection extends EventEmitter {
 
 			case "none": {
 
-				if (options.port) {
-					await this.launchRequestAttach(
-						filename, cwd, execArgs, options
-					);
+				if (args.port) {
+					await this.launchRequestAttach( args );
 				} else {
-					await this.launchRequestNone(
-						filename, cwd, execArgs, options
-					);
+					await this.launchRequestNone( args );
 				}
 
 				break;
@@ -485,7 +463,7 @@ export class perlDebuggerConnection extends EventEmitter {
 				// FIXME(bh): better error handling? Perhaps override bad
 				// values earlier in `resolveDebugConfiguration`?
 				this.logOutput(
-					`Error: console: ${options.console} unknown`
+					`Error: console: ${args.console} unknown`
 				);
 
 				break;
