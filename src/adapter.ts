@@ -8,7 +8,7 @@ import variableParser, { ParsedVariable, ParsedVariableScope } from './variableP
 import { DebugSession, LaunchOptions } from './session';
 import { LocalSession } from './localSession';
 import { RemoteSession } from './remoteSession';
-import { PerlDebugSession } from './perlDebug';
+import { PerlDebugSession, LaunchRequestArguments } from './perlDebug';
 
 import {
 	Event as VscodeEvent
@@ -372,12 +372,24 @@ export class perlDebuggerConnection extends EventEmitter {
 	}
 
 	async launchRequest(
-		filename: string,
-		cwd: string,
-		args: string[] = [],
-		options:LaunchOptions = {},
+		args: LaunchRequestArguments,
 		session: PerlDebugSession
 	): Promise<RequestResponse> {
+
+		// Compatibility for old signature
+		const filename = args.program;
+		const cwd = args.root;
+		const execArgs = args.execArgs;
+		const options: LaunchOptions = {
+				exec: args.exec,
+				args: args.args || [],
+				env: {
+					...args.env
+				},
+				port: args.port || undefined,
+				console: args.console,
+				autoAttachChildren: args.autoAttachChildren,
+		};
 
 		this.rootPath = cwd;
 		this.filename = filename;
@@ -424,7 +436,7 @@ export class perlDebuggerConnection extends EventEmitter {
 				}
 
 				await this.launchRequestTerminal(
-					filename, cwd, args, options, session
+					filename, cwd, execArgs, options, session
 				);
 
 				break;
@@ -454,11 +466,11 @@ export class perlDebuggerConnection extends EventEmitter {
 
 				if (options.port) {
 					await this.launchRequestAttach(
-						filename, cwd, args, options
+						filename, cwd, execArgs, options
 					);
 				} else {
 					await this.launchRequestNone(
-						filename, cwd, args, options
+						filename, cwd, execArgs, options
 					);
 				}
 

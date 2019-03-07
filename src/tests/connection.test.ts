@@ -4,6 +4,7 @@ import * as Path from 'path';
 import { perlDebuggerConnection, RequestResponse } from '../adapter';
 import { LocalSession } from '../localSession';
 import { LaunchOptions } from '../session';
+import { LaunchRequestArguments } from '../perlDebug';
 
 const PROJECT_ROOT = Path.join(__dirname, '../../');
 const DATA_ROOT = Path.join(PROJECT_ROOT, 'src/tests/data/');
@@ -19,11 +20,6 @@ const FILE_PRINT_ARGUMENTS = 'print_arguments.pl';
 const FILE_FAST_TEST_PL = 'fast_test.pl';
 
 const launchOptions: LaunchOptions = {
-	env: {
-		PATH: process.env.PATH || '',
-		PERL5LIB: process.env.PERL5LIB || '',
-	},
-	console: 'none'
 };
 
 async function testLaunch(
@@ -34,7 +30,20 @@ async function testLaunch(
 	options:LaunchOptions = {}
 ): Promise<RequestResponse> {
 
-	return conn.launchRequest(filename, cwd, args, options, null);
+	const launchArgs: LaunchRequestArguments = {
+		env: {
+			PATH: process.env.PATH || '',
+			PERL5LIB: process.env.PERL5LIB || '',
+		},
+		console: 'none',
+		program: filename,
+		root: cwd,
+		execArgs: args,
+		exec: 'perl',
+		...options,
+	};
+
+	return conn.launchRequest(launchArgs, null);
 
 }
 

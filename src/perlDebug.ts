@@ -216,22 +216,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 		}
 
 		const launchResponse = await this.perlDebugger.launchRequest(
-			args.program,
-			args.root,
-			args.execArgs,
-			{
-				exec: args.exec,
-				args: args.args || [],
-				env: {
-					...args.env
-				},
-				port: args.port || undefined,
-				console: args.console,
-				autoAttachChildren: args.autoAttachChildren,
-
-				// FIXME: figure out the split between LaunchOptions
-				// stopChildrenOnEntry: args.stopChildrenOnEntry
-			},
+			args,
 			// Needs a reference to the session for `runInTerminal`
 			this
 		);

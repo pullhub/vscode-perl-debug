@@ -3,6 +3,7 @@ import * as Path from 'path';
 import { perlDebuggerConnection, RequestResponse } from '../adapter';
 import { LocalSession } from '../localSession';
 import { LaunchOptions } from '../session';
+import { LaunchRequestArguments } from '../perlDebug';
 
 const PROJECT_ROOT = Path.join(__dirname, '../../');
 const DATA_ROOT = Path.join(PROJECT_ROOT, 'src/tests/data/');
@@ -10,11 +11,6 @@ const DATA_ROOT = Path.join(PROJECT_ROOT, 'src/tests/data/');
 const FILE_TEST_PL = 'slow_test.pl';
 
 const launchOptions = {
-	console: 'remote',
-	env: {
-		PATH: process.env.PATH || '',
-		PERL5LIB: process.env.PERL5LIB || '',
-	},
 };
 
 function setupDebugger(
@@ -28,15 +24,22 @@ function setupDebugger(
 	// Not to conflict with VS Code jest ext
 	const port = 5000 + Math.round(Math.random()*100);
 
+	const launchArgs: LaunchRequestArguments = {
+		program: FILE_TEST_PL,
+		root: DATA_ROOT,
+		execArgs: args,
+		port: port,
+		console: 'remote',
+		exec: 'perl',
+		env: {
+			PATH: process.env.PATH || '',
+			PERL5LIB: process.env.PERL5LIB || '',
+		},
+	};
+
 	// Listen for remote debugger session
 	const server = conn.launchRequest(
-		FILE_TEST_PL,
-		DATA_ROOT,
-		args,
-		{
-			...launchOptions,
-			port: port, // Trigger server
-		},
+		launchArgs,
 		null
 	);
 
