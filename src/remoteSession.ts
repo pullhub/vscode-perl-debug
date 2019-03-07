@@ -2,7 +2,7 @@ import * as net from 'net';
 import {spawn} from 'child_process';
 import { Readable, Writable } from 'stream';
 import { EventEmitter } from 'events';
-import { DebugSession, LaunchOptions } from './session';
+import { DebugSession } from './session';
 import { debuggerSignature } from './regExp';
 import { Attachable } from './attachable';
 

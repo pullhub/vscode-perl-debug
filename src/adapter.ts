@@ -5,7 +5,7 @@ import {spawn} from 'child_process';
 import {StreamCatcher} from './streamCatcher';
 import * as RX from './regExp';
 import variableParser, { ParsedVariable, ParsedVariableScope } from './variableParser';
-import { DebugSession, LaunchOptions } from './session';
+import { DebugSession } from './session';
 import { LocalSession } from './localSession';
 import { RemoteSession } from './remoteSession';
 import { PerlDebugSession, LaunchRequestArguments } from './perlDebug';
@@ -262,7 +262,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		filename: string,
 		cwd: string,
 		args: string[] = [],
-		options:LaunchOptions = {},
+		options:any = {},
 		session: PerlDebugSession
 	): Promise<void> {
 
@@ -320,7 +320,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		filename: string,
 		cwd: string,
 		args: string[] = [],
-		options:LaunchOptions = {}
+		options:any = {}
 	): Promise<void> {
 
 		const bindHost = 'localhost';
@@ -340,7 +340,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		filename: string,
 		cwd: string,
 		args: string[] = [],
-		options:LaunchOptions = {}
+		options:any = {}
 	): Promise<void> {
 
 		const bindHost = 'localhost';
@@ -358,8 +358,11 @@ export class perlDebuggerConnection extends EventEmitter {
 			resolve => this.perlDebugger.on("listening", res => resolve(res))
 		);
 
-		this.debuggee = new LocalSession(filename, cwd, args, {
+		this.debuggee = new LocalSession({
 			...options,
+			program: filename,
+			root: cwd,
+			args: options.args,
 			env: {
 				...options.env,
 				// TODO(bh): maybe merge user-specified options together
@@ -380,7 +383,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		const filename = args.program;
 		const cwd = args.root;
 		const execArgs = args.execArgs;
-		const options: LaunchOptions = {
+		const options = {
 				exec: args.exec,
 				args: args.args || [],
 				env: {

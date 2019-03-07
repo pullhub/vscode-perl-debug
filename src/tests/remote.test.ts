@@ -2,7 +2,6 @@ import assert = require('assert');
 import * as Path from 'path';
 import { perlDebuggerConnection, RequestResponse } from '../adapter';
 import { LocalSession } from '../localSession';
-import { LaunchOptions } from '../session';
 import { LaunchRequestArguments } from '../perlDebug';
 
 const PROJECT_ROOT = Path.join(__dirname, '../../');
@@ -10,15 +9,12 @@ const DATA_ROOT = Path.join(PROJECT_ROOT, 'src/tests/data/');
 
 const FILE_TEST_PL = 'slow_test.pl';
 
-const launchOptions = {
-};
-
 function setupDebugger(
 	conn: perlDebuggerConnection,
 	file: string,
 	cwd: string,
 	args: string[],
-	launchOptions: LaunchOptions
+	launchOptions: any = {}
 ): [Promise<RequestResponse>, LocalSession] {
 
 	// Not to conflict with VS Code jest ext
@@ -35,6 +31,7 @@ function setupDebugger(
 			PATH: process.env.PATH || '',
 			PERL5LIB: process.env.PERL5LIB || '',
 		},
+		...launchOptions
 	};
 
 	// Listen for remote debugger session
@@ -44,10 +41,14 @@ function setupDebugger(
 	);
 
 	// Start "remote" debug session
-	const local = new LocalSession(FILE_TEST_PL, DATA_ROOT, args, {
-		...launchOptions,
+	const local = new LocalSession({
+		exec: 'perl',
+		execArgs: [],
+		program: FILE_TEST_PL,
+		root: DATA_ROOT,
+		args: launchArgs.args,
+		console: 'none',
 		env: {
-			...launchOptions.env,
 			 // Trigger remote debugger
 			PERLDB_OPTS: `RemotePort=localhost:${port}`,
 		},
@@ -75,7 +76,6 @@ describe('Perl debugger connection', () => {
 
 		const [ server, local ] = setupDebugger(
 			conn, FILE_TEST_PL, DATA_ROOT, [], {
-				...launchOptions,
 				args: ['foo=bar', 'test=ok'],
 			}
 		);
@@ -99,7 +99,7 @@ describe('Perl debugger connection', () => {
 	it('Should be able to get loaded scripts and their source code from' + FILE_TEST_PL, async () => {
 
 		const [ server, local ] = setupDebugger(
-			conn, FILE_TEST_PL, DATA_ROOT, [], launchOptions
+			conn, FILE_TEST_PL, DATA_ROOT, []
 		);
 
 		// Wait for result

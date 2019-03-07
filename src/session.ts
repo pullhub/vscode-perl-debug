@@ -10,14 +10,3 @@ export interface DebugSession {
 	dump: Function, // Dump debug information
 	port: Number | null;
 }
-
-// TODO(bh): Perhaps it makes sense to unify this with the subset
-// in LaunchRequestArguments?
-export interface LaunchOptions {
-	exec?: string;
-	args?: string[];
-	env?: {},
-	port?: number;
-	console?: string;
-	autoAttachChildren?: boolean;
-}

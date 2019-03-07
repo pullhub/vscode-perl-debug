@@ -1,7 +1,8 @@
 import {spawn} from 'child_process';
 import { Readable, Writable } from 'stream';
 import { EventEmitter } from 'events';
-import { DebugSession, LaunchOptions } from './session';
+import { DebugSession } from './session';
+import { LaunchRequestArguments } from './perlDebug';
 
 export class LocalSession extends EventEmitter implements DebugSession {
 	public stdin: Writable;
@@ -12,23 +13,23 @@ export class LocalSession extends EventEmitter implements DebugSession {
 	public dump: Function;
 	public port: Number | null;
 
-	constructor(filename: string, cwd: string, args: string[] = [], options: LaunchOptions = {}) {
+	constructor(launchArgs: LaunchRequestArguments) {
 
 		super();
 
-		const perlCommand = options.exec || 'perl';
-		const programArguments = options.args || [];
+		const perlCommand = launchArgs.exec || 'perl';
+		const programArguments = launchArgs.args || [];
 
-		const commandArgs = [].concat(args, [ '-d', filename /*, '-emacs'*/], programArguments);
+		const commandArgs = (launchArgs.execArgs || []).concat([ '-d', launchArgs.program /*, '-emacs'*/], programArguments);
 
 		const spawnOptions = {
 			detached: true,
-			cwd: cwd || undefined,
+			cwd: launchArgs.root || undefined,
 			env: {
 				COLUMNS: 80,
 				LINES: 25,
 				TERM: 'dumb',
-				...options.env,
+				...launchArgs.env,
 			},
 		};
 
