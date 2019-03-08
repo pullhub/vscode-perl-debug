@@ -1,4 +1,4 @@
-import {spawn} from 'child_process';
+import { spawn } from 'child_process';
 import { Readable, Writable } from 'stream';
 import { EventEmitter } from 'events';
 import { DebugSession } from './session';
@@ -18,9 +18,12 @@ export class LocalSession extends EventEmitter implements DebugSession {
 		super();
 
 		const perlCommand = launchArgs.exec || 'perl';
-		const programArguments = launchArgs.args || [];
-
-		const commandArgs = (launchArgs.execArgs || []).concat([ '-d', launchArgs.program /*, '-emacs'*/], programArguments);
+		const commandArgs = [
+			...( launchArgs.execArgs || [] ),
+			'-d',
+			launchArgs.program,
+			...( launchArgs.args || [] )
+		];
 
 		const spawnOptions = {
 			detached: true,

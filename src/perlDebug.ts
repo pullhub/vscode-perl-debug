@@ -331,7 +331,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	protected pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments): void {
 
-		if (this.adapter.isRemote) {
+		if (!this && this.adapter.isRemote) {
 			response.success = false;
 			response.body = {
 				error: {

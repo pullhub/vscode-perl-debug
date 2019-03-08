@@ -48,12 +48,14 @@ export class AttachSession extends EventEmitter implements DebugSession {
 			this.stderr.push(data);
 		});
 
-		client.on('end', data => {
-			this.emit('close', data);
+		client.on('close', error => {
+			this.emit('close', error);
+			this.kill();
 		});
 
 		client.on('error', data => {
 			this.emit('error', data);
+			this.kill();
 		});
 
 		this.title = () => `attachSession on "${port}"`;
