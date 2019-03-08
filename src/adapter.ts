@@ -111,6 +111,8 @@ export class perlDebuggerConnection extends EventEmitter {
 	public streamCatcher: StreamCatcher;
 	public perlVersion: string;
 	public padwalkerVersion: string;
+	public develVscodeVersion?: string;
+	public hostname?: string;
 	public commandRunning: string = '';
 	public isRemote: boolean = false;
 	public debuggerPid?: number;
@@ -202,6 +204,51 @@ export class perlDebuggerConnection extends EventEmitter {
 					// console, but with RemotePort set, this seems to launch a
 					// new tty and does nothing with it but print this message.
 					// Might be a good idea to investigate further.
+				}
+
+				// Collection of known messages that are not handled in any
+				// special way (and probably need not be handled either).
+				//
+				// if (/^Loading DB routines from (.*)/.test(line)) {
+				// }
+				//
+				// if (/^Editor support (.*)/.test(line)) {
+				// }
+				//
+				// if (/^Enter h or 'h h' for help, or '.*perldebug' for more help/.test(line)) {
+				// }
+				//
+				// if (/^The old f command is now the r command\./.test(line)) {
+				// }
+				//
+				// if (/^The new f command switches filenames\./.test(line)) {
+				// }
+				//
+				// if (/^No file matching '(.*)' is loaded\./.test(line)) {
+				// }
+				//
+				// if (/^Already in (.*)\./.test(line)) {
+				// }
+				//
+				// if (/^Subroutine (.*) not found\./.test(line)) {
+				// }
+				//
+				// if (/^exec failed: (.*)/.test(line)) {
+				// }
+				//
+				// if (/^(\d+) levels deep in subroutine calls!/.test(line)) {
+				// }
+
+				if (/^Watchpoint (\d+):\t(.*) changed:/.test(line)) {
+
+				}
+
+				if (/^\s+old value:\t'(.*)'/.test(line)) {
+
+				}
+
+				if (/^\s+new value:\t'(.*)'/.test(line)) {
+
 				}
 
 				if (/^Debugged program terminated/.test(line)) {
@@ -551,6 +598,28 @@ export class perlDebuggerConnection extends EventEmitter {
 			this.perlDebugger.stderr
 		);
 
+		if (args.sessions !== 'single') {
+
+			this.hostname = await this.getHostname();
+			this.develVscodeVersion = await this.getDevelVscodeVersion();
+
+			if (!this.develVscodeVersion) {
+
+				// Global watch expression that breaks into the debugger when
+				// the pid of the process changes; that can only happen right
+				// after a fork. This is needed to learn about new children
+				// when Devel::vscode is not loaded, see documentation there.
+				//
+				// https://github.com/Microsoft/debug-adapter-protocol/issues/30
+
+				await this.streamCatcher.request(
+					'w $$'
+				);
+
+			}
+
+		}
+
 		// NOTE(bh): By default warnings should be shown in the terminal
 		// where the debugee's STDERR is shown. However, some versions of
 		// Perl default https://rt.perl.org/Ticket/Display.html?id=133875
@@ -586,7 +655,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		// For local processes the pid is needed to send `SIGINT` to the
 		// debugger, which is supposed to break into the debugger and
 		// used to implement the `pauseRequest`.
-		this.debuggerPid = parseInt(await this.getExpressionValue('$$'));
+		this.debuggerPid = await this.getDebuggerPid();
 
 		try {
 			// Get the version just after
@@ -884,6 +953,28 @@ export class perlDebuggerConnection extends EventEmitter {
 		if (/^[0-9]+\.?([0-9]?)+$/.test(version)) {
 			return version;
 		}
+	}
+
+	async getDebuggerPid(): Promise<number> {
+		const res = await this.request(
+			'p $$'
+		);
+		return parseInt(res.data[0]);
+	}
+
+	async getHostname(): Promise<string> {
+		const res = await this.request(
+			'p sub { local $@; eval "require Sys::Hostname; Sys::Hostname::hostname()" }->()'
+		);
+		return res.data[0];
+	}
+
+	async getDevelVscodeVersion(): Promise<string | undefined> {
+		const res = await this.request(
+			'p sub { local $@; eval "\$Devel::vscode::VERSION" }->()'
+		);
+		const [ result = undefined ] = res.data;
+		return result;
 	}
 
 	async resolveFilename(filename): Promise<string> {

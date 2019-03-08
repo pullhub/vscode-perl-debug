@@ -234,7 +234,27 @@ export class PerlDebugSession extends LoggingDebugSession {
 		// so with a `configurationDoneRequest`, so we wait here for it.
 		await this._configurationDone.wait(1000);
 
-		if (args.stopOnEntry) {
+		// FIXME(bh): This code needs refactoring. In addition to deep
+		// nesting of control logic, it is probably a bad idea to abuse
+		// the response to this request in this manner.
+		if (
+			(args.sessions || 'single') !== 'single'
+			&&
+			/^Devel::vscode::_fork/.test(launchResponse.data[0] || "")
+		) {
+			if (args.sessions === 'watch') {
+
+				this.adapter.request('c');
+				this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
+
+			} else if (args.sessions === 'break') {
+
+				this.adapter.request('s');
+				this.sendEvent(new StoppedEvent("postfork", PerlDebugSession.THREAD_ID));
+
+			}
+		} else if (args.stopOnEntry) {
+
 			if (launchResponse.ln) {
 				this._currentLine = launchResponse.ln - 1;
 			}
