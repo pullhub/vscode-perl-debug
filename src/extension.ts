@@ -53,7 +53,7 @@ function handleAttachableEvent(
 		request: 'attach',
 		name: 'auto-attach',
 		port: event.body.port,
-		"console": "none",
+		console: "none",
 		debugServer: null,
 		autoAttachChildren: true
 	};
@@ -159,6 +159,10 @@ class PerlDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 
 		if (config.port && !config.console) {
 			config.console = 'remote';
+		}
+
+		if (!config.sessions) {
+			config.sessions = 'single';
 		}
 
 		if (!config.console) {

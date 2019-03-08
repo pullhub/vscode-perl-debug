@@ -291,7 +291,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		this.perlDebugger = new RemoteSession(
 			0,
 			bindHost,
-			args.autoAttachChildren
+			args.sessions
 		);
 
 		this.logOutput(this.perlDebugger.title());
@@ -338,7 +338,7 @@ export class perlDebuggerConnection extends EventEmitter {
 	}
 
 	private async launchRequestNone(
-		options: LaunchRequestArguments
+		args: LaunchRequestArguments
 	): Promise<void> {
 
 		const bindHost = 'localhost';
@@ -347,7 +347,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		this.perlDebugger = new RemoteSession(
 			0,
 			bindHost,
-			options.autoAttachChildren
+			args.sessions
 		);
 
 		this.logOutput(this.perlDebugger.title());
@@ -357,18 +357,43 @@ export class perlDebuggerConnection extends EventEmitter {
 		);
 
 		this.debuggee = new LocalSession({
-			...options,
-			program: options.program,
-			root: options.root,
-			args: options.args,
+			...args,
+			program: args.program,
+			root: args.root,
+			args: args.args,
 			env: {
-				...options.env,
+				...args.env,
 				// TODO(bh): maybe merge user-specified options together
 				// with the RemotePort setting we need?
 				PERLDB_OPTS:
 					`RemotePort=${bindHost}:${this.perlDebugger.port}`,
 			}
 		});
+
+	}
+
+	private async launchRequestRemote(
+		args: LaunchRequestArguments
+	): Promise<void> {
+
+		// FIXME(bh): Logging the port here makes no sense when the
+		// port is set to zero (which causes random one to be selected)
+
+		this.logOutput(
+			`Waiting for remote debugger to connect on port "${args.port}"`
+		);
+
+		this.perlDebugger = new RemoteSession(
+			args.port,
+			'0.0.0.0',
+			args.sessions
+		);
+		this.isRemote = true;
+
+		// FIXME(bh): this does not await the listening event since we
+		// already know the port number beforehand, and probably we do
+		// still wait (due to the streamCatcher perhaps?) for streams
+		// to become usable, it still seems weird though to not await.
 
 	}
 
@@ -382,7 +407,7 @@ export class perlDebuggerConnection extends EventEmitter {
 			case "integratedTerminal":
 			case "externalTerminal": {
 
-				if (!session.dcSupportsRunInTerminal) {
+				if (!session || !session.dcSupportsRunInTerminal) {
 
 					// FIXME(bh): better error handling.
 					this.logOutput(
@@ -399,27 +424,13 @@ export class perlDebuggerConnection extends EventEmitter {
 			}
 
 			case "remote": {
-
-				this.logOutput(
-					`Waiting for remote debugger to connect on port "${args.port}"`
-				);
-				this.perlDebugger = new RemoteSession(
-					args.port,
-					'0.0.0.0',
-					args.autoAttachChildren
-				);
-				this.isRemote = true;
-
-				// FIXME(bh): this does not await the listening event since we
-				// already know the port number beforehand, and probably we do
-				// still wait (due to the streamCatcher perhaps?) for streams
-				// to become usable, it still seems weird though to not await.
-
+				await this.launchRequestRemote(args);
 				break;
 			}
 
 			case "none": {
 
+				// FIXME: ought to check for "attach", not "port" hack
 				if (args.port) {
 					await this.attachRequest( args );
 				} else {
@@ -468,11 +479,11 @@ export class perlDebuggerConnection extends EventEmitter {
 		// FIXME(bh): Check needs to account for args.root
 
 		if (!fs.existsSync(args.program)) {
-			this.logOutput( `Error: File ${args.program} not found`);
+			this.logOutput(`Error: File ${args.program} not found`);
 		}
 
 		if (args.root && !fs.existsSync(args.root)) {
-			this.logOutput( `Error: Folder ${args.root} not found`);
+			this.logOutput(`Error: Folder ${args.root} not found`);
 		}
 
 		this.logOutput(`Platform: ${process.platform}`);

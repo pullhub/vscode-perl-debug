@@ -202,15 +202,15 @@
                 "description": "Log raw I/O with debugger in output channel",
                 "default": false
               },
-              "autoAttachChildren": {
-                "type": "boolean",
-                "description": "Attach to forked children",
-                "default": true
-              },
-              "stopChildrenOnEntry": {
-                "type": "boolean",
-                "description": "Automatically stop forked children after launch.",
-                "default": true
+              "sessions": {
+                "type": "string",
+                "description": "How to handle forked children or multiple connections",
+                "default": "single",
+                "enum": [
+                  "single",
+                  "watch",
+                  "break"
+                ]
               }
             }
           }
@@ -230,8 +230,7 @@
             "env": {},
             "debugRaw": false,
             "stopOnEntry": true,
-            "autoAttachChildren": true,
-            "stopChildrenOnEntry": true
+            "sessions": "single"
           },
           {
             "type": "perl",
@@ -241,7 +240,8 @@
             "program": "${workspaceFolder}/${relativeFile}",
             "root": "${workspaceRoot}/",
             "stopOnEntry": true,
-            "port": 5000
+            "port": 5000,
+            "sessions": "single"
           }
         ]
       }

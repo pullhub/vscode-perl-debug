@@ -6,7 +6,7 @@ import { DebugSession } from './session';
 import { debuggerSignature } from './regExp';
 import { Attachable } from './attachable';
 
-export class RemoteSession extends EventEmitter implements DebugSession {
+export class DebugServer extends net.Server {
 	public stdin: Writable;
 	public stdout: Readable;
 	public stderr: Readable;
@@ -18,7 +18,7 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 	constructor(
 		port: number,
 		bindAddress: string = "0.0.0.0",
-		sessions: string = 'single'
+		autoAttachChildren: boolean = true
 	) {
 		super();
 
@@ -56,7 +56,7 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 				this.stdout.push(`Remote debugger at "${name}" connected at port ${port}.`);
 			} else {
 
-				if (sessions && sessions !== 'single') {
+				if (autoAttachChildren) {
 
 					// When a debuggee calls `fork()` the Perl debugger will
 					// fork the debuggee and try to connect to the same port
