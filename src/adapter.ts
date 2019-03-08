@@ -27,6 +27,12 @@ interface ResponseError {
 	name: string,
 }
 
+interface WatchpointChange {
+	expression: string;
+	oldValue?: string;
+	newValue?: string;
+}
+
 interface Variable {
 	name: string,
 	type: string,
@@ -53,6 +59,7 @@ export interface RequestResponse {
 	finished: boolean,
 	command?:string,
 	db?:string,
+	changes: WatchpointChange[];
 }
 
 function findFilenameLine(str: string): string[] {
@@ -165,7 +172,12 @@ export class perlDebuggerConnection extends EventEmitter {
 			finished: false,
 			command: '',
 			db: '',
+			changes: [],
 		};
+
+		if (res.orgData.filter(x => /Watchpoint/.test(x)).length > 0) {
+			this.logOutput("");
+		}
 
 		res.orgData.forEach((line, i) => {
 			if (i === 0) {
@@ -239,17 +251,38 @@ export class perlDebuggerConnection extends EventEmitter {
 				// if (/^(\d+) levels deep in subroutine calls!/.test(line)) {
 				// }
 
-				if (/^Watchpoint (\d+):\t(.*) changed:/.test(line)) {
+				// NOTE: this was supposed to handle when `w $$` triggers,
+				// but it turns out `perl5db.pl` prints this to the wrong
+				// tty, that is, in the fork() parent, while the change is
+				// actually in the child. Also, this probably needs to go
+				// into the streamcatcher, as it is not a response to any
+				// request?
 
-				}
+				// // Watchpoint 0: $example changed:
+				// if (RX.watchpointChange.test(line)) {
+				// 	const parts = line.match(RX.watchpointChange);
+				// 	const [, unstableId, expression ] = parts;
+				// 	res.changes.push({
+				// 		expression: expression,
+				// 	});
+				// }
 
-				if (/^\s+old value:\t'(.*)'/.test(line)) {
+				// if (RX.watchpointOldval.test(line)) {
+				// 	const parts = line.match(RX.watchpointOldval);
+				// 	const [, oldValue ] = parts;
 
-				}
+				// 	// FIXME(bh): This approach for handling watchpoint changes
+				// 	// is probably not sound if the expression being watched
+				// 	// stringifies as multiple lines. But internally we only
+				// 	// use a single watch expression where this is not an issue
+				// 	res.changes[res.changes.length - 1].oldValue = oldValue;
+				// }
 
-				if (/^\s+new value:\t'(.*)'/.test(line)) {
-
-				}
+				// if (RX.watchpointNewval.test(line)) {
+				// 	const parts = line.match(RX.watchpointNewval);
+				// 	const [, newValue ] = parts;
+				// 	res.changes[res.changes.length - 1].newValue = newValue;
+				// }
 
 				if (/^Debugged program terminated/.test(line)) {
 					res.finished = true;

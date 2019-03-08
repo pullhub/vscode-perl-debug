@@ -59,3 +59,7 @@ export const codeErrorMissingModule = /^(\S+) module not found - please install$
 // optional thread id, followed by `DB`, and for nested debuggers
 // the number of `<` and `>` corresponds to the level of nesting.
 export const debuggerSignature = /^(\[pid=[0-9>\-]+\])? (\[\d+\])? DB<+[0-9]+>+ $/;
+
+export const watchpointChange = /^Watchpoint (\d+):\t(.*) changed:/;
+export const watchpointOldval = /^\s+old value:\t'(.*)'/;
+export const watchpointNewval = /^\s+new value:\t'(.*)'/;

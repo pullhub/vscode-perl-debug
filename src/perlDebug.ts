@@ -240,7 +240,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 		if (
 			(args.sessions || 'single') !== 'single'
 			&&
-			/^Devel::vscode::_fork/.test(launchResponse.data[0] || "")
+			(
+				/^Devel::vscode::_fork/.test(launchResponse.data[0] || "")
+				||
+				/^\[pid=/.test(launchResponse.db)
+			)
 		) {
 			if (args.sessions === 'watch') {
 
