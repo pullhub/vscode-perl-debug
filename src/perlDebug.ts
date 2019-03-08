@@ -121,6 +121,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 		});
 
 		this.adapter.on('perl-debug.debug', (x) => {
+			// FIXME: needs to check launch options
 			this.sendEvent(new Event('perl-debug.debug', x));
 		});
 
@@ -211,7 +212,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 		// FIXME(bh): Should only be done if this is a new main session.
 		// Perhaps use a private launch config option to indicate if this
 		// is a child session?
-		this.sendEvent(new Event('perl-debug.streamcatcher.clear'));
+//		this.sendEvent(new Event('perl-debug.streamcatcher.clear'));
 
 		const launchResponse = await this.adapter.launchRequest(
 			args,

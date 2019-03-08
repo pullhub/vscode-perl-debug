@@ -202,6 +202,11 @@
                 "description": "Log raw I/O with debugger in output channel",
                 "default": false
               },
+              "debugLog": {
+                "type": "boolean",
+                "description": "Log debug messages in output channel",
+                "default": false
+              },
               "sessions": {
                 "type": "string",
                 "description": "How to handle forked children or multiple connections",

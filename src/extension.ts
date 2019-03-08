@@ -19,6 +19,30 @@ const EMBED_DEBUG_ADAPTER = true;
 let perlDebugOutputChannel: vscode.OutputChannel | undefined;
 let streamCatcherOutputChannel: vscode.OutputChannel | undefined;
 
+function handlePerlDebugEvent(
+	event: vscode.DebugSessionCustomEvent
+) {
+
+	if (!perlDebugOutputChannel) {
+
+		perlDebugOutputChannel = vscode.window.createOutputChannel(
+			'Perl Debug Log'
+		);
+
+		perlDebugOutputChannel.show(true);
+
+	}
+
+	perlDebugOutputChannel.appendLine(
+		JSON.stringify([
+			new Date().toISOString(),
+			event.event,
+			...event.body,
+		])
+	);
+
+}
+
 function handleStreamCatcherEvent(
 	event: vscode.DebugSessionCustomEvent
 ) {
@@ -51,11 +75,10 @@ function handleAttachableEvent(
 		...vscode.debug.activeDebugSession.configuration,
 		type: 'perl',
 		request: 'attach',
-		name: 'auto-attach',
+		name: `auto-attach ${event.body.port}`,
 		port: event.body.port,
 		console: "none",
 		debugServer: null,
-		autoAttachChildren: true
 	};
 
 	vscode.debug.startDebugging(
@@ -82,6 +105,9 @@ function handleCustomEvent(event: vscode.DebugSessionCustomEvent) {
 			break;
 		case 'perl-debug.attachable.listening':
 			handleAttachableEvent(event);
+			break;
+		case 'perl-debug.debug':
+			handlePerlDebugEvent(event);
 			break;
 		case 'perl-debug.streamcatcher.clear':
 			if (streamCatcherOutputChannel) {

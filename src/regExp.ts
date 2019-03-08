@@ -2,7 +2,7 @@ export const colors = /\u001b\[([0-9]+)m|\u001b/g;
 
 // TODO(bh): Perhaps unify this with debuggerSignature by making
 // whitespace entirely optional in the latter regular expression?
-export const db = /^(\[pid=[0-9\->]+\])?(\[\d+\])?DB\<+([0-9]+)\>+$/;
+export const db = /^(\[(pid=)?[0-9\->]+\])?(\[\d+\])?DB\<+([0-9]+)\>+$/;
 
 export const restartWarning = /^Warning: some settings and command-line options may be lost!/;
 

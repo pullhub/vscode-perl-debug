@@ -196,6 +196,14 @@ export class perlDebuggerConnection extends EventEmitter {
 				//	res.exception = true;
 				}
 
+				if (/^Daughter DB session started\.\.\./.test(line)) {
+					// TODO(bh): The `perl5db.pl` here is a bit odd, using the
+					// typical `TERM=xterm perl -d` this is printed in the main
+					// console, but with RemotePort set, this seems to launch a
+					// new tty and does nothing with it but print this message.
+					// Might be a good idea to investigate further.
+				}
+
 				if (/^Debugged program terminated/.test(line)) {
 					res.finished = true;
 				}
@@ -521,11 +529,7 @@ export class perlDebuggerConnection extends EventEmitter {
 				);
 		});
 
-		const data = await this.streamCatcher.launch(
-			this.perlDebugger.stdin,
-			this.perlDebugger.stderr
-		);
-
+		this.streamCatcher.removeAllListeners();
 		this.streamCatcher.on('perl-debug.streamcatcher.data', (...x) => {
 			this.emit(
 				'perl-debug.streamcatcher.data',
@@ -541,6 +545,11 @@ export class perlDebuggerConnection extends EventEmitter {
 				...x
 			);
 		});
+
+		const data = await this.streamCatcher.launch(
+			this.perlDebugger.stdin,
+			this.perlDebugger.stderr
+		);
 
 		// NOTE(bh): By default warnings should be shown in the terminal
 		// where the debugee's STDERR is shown. However, some versions of
