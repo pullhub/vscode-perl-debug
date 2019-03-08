@@ -53,15 +53,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	private _breakpointId = 1000;
 
-	// This is the next line that will be 'executed'
-	private __currentLine = 0;
-	private get _currentLine() : number {
-		return this.__currentLine;
-    }
-	private set _currentLine(line: number) {
-		this.__currentLine = line;
-	}
-
 	private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
 
 	private _functionBreakPoints: Map<string, DebugProtocol.Breakpoint>
@@ -259,9 +250,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 			}
 		} else if (args.stopOnEntry) {
 
-			if (launchResponse.ln) {
-				this._currentLine = launchResponse.ln - 1;
-			}
 			this.sendResponse(response);
 
 			// we stop on the first line
@@ -331,8 +319,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 		response.success = false;
 		this.sendResponse(response);
-		// no more lines: stop at first line
-		this._currentLine = 0;
 		this.sendEvent(new StoppedEvent("entry", PerlDebugSession.THREAD_ID));
  	}
 
@@ -344,8 +330,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 		response.success = false;
 		this.sendResponse(response);
-		// no more lines: stop at first line
-		this._currentLine = 0;
 		this.sendEvent(new StoppedEvent("entry", PerlDebugSession.THREAD_ID));
 	}
 
@@ -547,9 +531,6 @@ export class PerlDebugSession extends LoggingDebugSession {
     protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments): void {
 		this.adapter.request('r')
 			.then((res) => {
-				if (res.ln) {
-					this._currentLine = this.convertDebuggerLineToClient(res.ln);
-				}
 
 				this.sendResponse(response);
 
@@ -579,9 +560,6 @@ export class PerlDebugSession extends LoggingDebugSession {
     protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
 		this.adapter.request('s')
 			.then((res) => {
-				if (res.ln) {
-					this._currentLine = this.convertDebuggerLineToClient(res.ln);
-				}
 
 				this.sendResponse(response);
 
@@ -610,9 +588,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 */
 	private async restartRequestAsync(response: DebugProtocol.RestartResponse, args: DebugProtocol.RestartArguments): Promise<DebugProtocol.RestartResponse> {
 		const res = await this.adapter.request('R')
-		if (res.ln) {
-			this._currentLine = this.convertDebuggerLineToClient(res.ln);
-		}
 		if (res.finished) {
 			this.sendEvent(new TerminatedEvent());
 		} else {
@@ -702,9 +677,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 	protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
 		this.adapter.request('n')
 			.then((res) => {
-				if (res.ln) {
-					this._currentLine = this.convertDebuggerLineToClient(res.ln);
-				}
 
 				this.sendResponse(response);
 
@@ -749,9 +721,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 		this.adapter.request('c')
 			.then((res) => {
-				if (res.ln) {
-					this._currentLine = this.convertDebuggerLineToClient(res.ln);
-				}
 				this.sendResponse(response);
 
 				if (res.finished) {
