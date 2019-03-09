@@ -278,19 +278,29 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
 
-		// TODO(bh): vscode actually shows the thread name in the user
+		// NOTE(bh): vscode actually shows the thread name in the user
 		// interface during multi-session debugging, at least until
 		// https://github.com/Microsoft/vscode/issues/69752 is addressed,
-		// so it might be a good idea to set a better name here.
+		// so this tries to make a pretty name for it.
 
-		// xxx: Not sure if this is sufficient to levarage multi cores?
-		// return the default thread
+		// NOTE(bh): "The use of interpreter-based threads in perl is
+		// officially discouraged." -- `perldoc threads`. This extension
+		// does not support them in any way, so we only ever report one
+		// thread per adapter instance.
+
 		response.body = {
 			threads: [
-				new Thread(PerlDebugSession.THREAD_ID, `${this.adapter.programBasename} (pid ${this.adapter.debuggerPid} on ${this.adapter.hostname})`)
+				new Thread(
+					PerlDebugSession.THREAD_ID,
+					`${this.adapter.programBasename} (pid ${
+						this.adapter.debuggerPid} on ${
+							this.adapter.hostname})`
+				)
 			]
 		};
+
 		this.sendResponse(response);
+
 	}
 
 
