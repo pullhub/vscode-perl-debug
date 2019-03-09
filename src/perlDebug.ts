@@ -110,6 +110,14 @@ export class PerlDebugSession extends LoggingDebugSession {
 		});
 
 		this.adapter.on('perl-debug.stopped', (x) => {
+
+			// The adapter emits this event when the debugger accepts user
+			// input. When control is passed to the debugger, like when a
+			// continueRequest is being processed, `this._stopped` is set
+			// to a false value. That along with this check is necessary
+			// since we must not send a StoppedEvent when processing other
+			// requests where control is immediately passed back to us.
+
 			if (!this._stopped) {
 				this._stopped = true;
 				// FIXME: this is not always the true reason.
@@ -128,15 +136,10 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 		this.adapter.on(
 			'perl-debug.attachable.listening',
-			(...x) => {
+			data => {
 				this.sendEvent(
 					new Event(
-						'perl-debug.attachable.listening', ...x
-						// {
-						// 	port: address.port,
-						// 	family: address.family,
-						// 	address: address.address
-						// }
+						'perl-debug.attachable.listening', data
 					)
 				);
 			}
@@ -292,9 +295,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 			threads: [
 				new Thread(
 					PerlDebugSession.THREAD_ID,
-					`${this.adapter.programBasename} (pid ${
-						this.adapter.debuggerPid} on ${
-							this.adapter.hostname})`
+					this.adapter.getThreadName()
 				)
 			]
 		};
@@ -553,7 +554,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 		this._stopped = false;
 		this.adapter.request('r');
 		this.sendResponse(response);
-		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
 	}
 
 	/**
@@ -563,7 +563,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 		this._stopped = false;
 		this.adapter.request('s');
 		this.sendResponse(response);
-		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
 	}
 
 	/**
@@ -662,7 +661,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 		this._stopped = false;
 		this.adapter.request('n');
 		this.sendResponse(response);
-		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
 	}
 
 	/**
@@ -670,17 +668,17 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 */
 	protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
 
-		// NOTE(bh): "Please note: a debug adapter is not expected to
-		// send this event in response to a request that implies that
-		// execution continues, e.g. ‘launch’ or ‘continue’." -- but in
-		// our case sending the `c` command to the debugger is never
-		// acknowledged by the debugger, we cannot tell if it succeeded.
+		// NOTE(bh): The code for execution control requests like this
+		// one used to delay sending a response and events until there
+		// has been a response from the debugger. That does not make
+		// sense though since we explicitly pass control the debugger,
+		// and it might not return at all until the debuggee terminates.
+		// Instead, responses are sent immediately and events are sent
+		// based on the actual state of the debugger.
 
 		this._stopped = false;
 		this.adapter.request('c');
 		this.sendResponse(response);
-		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
-
 	}
 
 	/**

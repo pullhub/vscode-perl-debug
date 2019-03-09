@@ -75,8 +75,12 @@ function handleAttachableEvent(
 		...vscode.debug.activeDebugSession.configuration,
 		type: 'perl',
 		request: 'attach',
-		name: `auto-attach ${event.body.port}`,
-		port: event.body.port,
+
+		// Sadly better https://github.com/Microsoft/vscode/issues/70104
+		// names do not seem possible at the moment, but that may change
+		name: `auto ${event.body.src.address}:${event.body.src.port}`,
+
+		port: event.body.dst.port,
 		console: "none",
 		debugServer: null,
 	};
@@ -193,10 +197,6 @@ class PerlDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 
 		if (!config.console) {
 			config.console = 'integratedTerminal';
-		}
-
-		if (config.autoAttachChildren === undefined) {
-			config.autoAttachChildren = true;
 		}
 
 		// map config.inc as leading -I execArgs

@@ -605,10 +605,10 @@ export class perlDebuggerConnection extends EventEmitter {
 
 		this.perlDebugger.on(
 			'perl-debug.attachable.listening',
-			address => {
+			data => {
 				this.emit(
 					'perl-debug.attachable.listening',
-					address
+					data
 				);
 		});
 
@@ -1020,6 +1020,12 @@ export class perlDebuggerConnection extends EventEmitter {
 			'p $0'
 		);
 		return (res.data[0] || '').replace(/.*[\/\\](.*)/, '$1');
+	}
+
+	public getThreadName(): string {
+		return `${this.programBasename} (pid ${
+			this.debuggerPid} on ${
+				this.hostname})`;
 	}
 
 	async resolveFilename(filename): Promise<string> {
