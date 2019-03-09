@@ -14,12 +14,7 @@ import { AttachSession } from './attachSession';
 
 import { PerlDebugSession, LaunchRequestArguments } from './perlDebug';
 
-import {
-	Event as VscodeEvent
-} from 'vscode-debugadapter';
 import { EventEmitter } from 'events';
-import { timingSafeEqual } from 'crypto';
-import { O_SYMLINK } from 'constants';
 
 interface ResponseError {
 	filename: string,
@@ -546,6 +541,49 @@ export class perlDebuggerConnection extends EventEmitter {
 
 	}
 
+	private async canSignalHeuristic(): Promise<boolean> {
+
+		// Execution control requests such as `terminate` and `pause` are
+		// at least in part implemented through sending signals to the
+		// debugger/debuggee process. That can only be done on the local
+		// system. But users might use remote debug configurations on the
+		// local machine, in which case it would be a shame if `pause`
+		// did not work.
+		//
+		// There is no easy and portable way to generate something like a
+		// globally unique process identifier that could be used to make
+		// sure we actually are on the same system, but a heuristic might
+		// be fair enough. If it looks as though Perl can signal us, and
+		// we can signal Perl, and we think we run on systems with the
+		// same hostname, we simply assume that we in fact do so.
+		//
+		// On Linux `/proc/sys/kernel/random/boot_id` could be compared,
+		// if we and Perl see the same contents, we very probably are on
+		// the same system. Similarily, other `/proc/` details could be
+		// compared. We cannot use socket address comparisons since the
+		// user might have their own forwarding setup in place.
+
+		if (os.hostname() !== this.hostname) {
+			return false;
+		}
+
+		const debuggerCanSignalUs = await this.getExpressionValue(
+			`CORE::kill(0, ${process.pid})`
+		);
+
+		if (!debuggerCanSignalUs) {
+			return false;
+		}
+
+		try {
+			process.kill(this.debuggerPid, 0);
+		} catch (e) {
+			return false;
+		}
+
+		return true;
+	}
+
 	async launchRequest(
 		args: LaunchRequestArguments,
 		session: PerlDebugSession
@@ -695,44 +733,12 @@ export class perlDebuggerConnection extends EventEmitter {
 		this.programBasename = await this.getProgramBasename();
 		this.hostname = await this.getHostname();
 
-		// Execution control requests such as `terminate` and `pause` are
-		// at least in part implemented through sending signals to the
-		// debugger/debuggee process. That can only be done on the local
-		// system. But users might use remote debug configurations on the
-		// local machine, in which case it would be a shame if `pause`
-		// did not work.
-		//
-		// There is no easy and portable way to generate something like a
-		// globally unique process identifier that could be used to make
-		// sure we actually are on the same system, but a heuristic might
-		// be fair enough. If it looks as though Perl can signal us, and
-		// we can signal Perl, and we think we run on systems with the
-		// same hostname, we simply assume that we in fact do so.
-    //
-		// On Linux `/proc/sys/kernel/random/boot_id` could be compared,
-		// if we and Perl see the same contents, we very probably are on
-		// the same system. Similarily, other `/proc/` details could be
-		// compared.
+		// Try to find out if debug adapter and debugger run on the same
+		// machine and can signal each other even if the launchRequest is
+		// configured for remote debugging or an attach session, so users
+		// can pause and terminate processes through the user interface.
 		if (!this.canSignalDebugger) {
-
-			const debuggerCanSignalUs = await this.getExpressionValue(
-				`CORE::kill(0, ${process.pid})`
-			);
-
-			let weCanSignalDebugger = false;
-
-			try {
-				process.kill(this.debuggerPid, 0);
-				weCanSignalDebugger = true;
-			} catch (e) {
-			}
-
-			if (debuggerCanSignalUs && weCanSignalDebugger) {
-				if (os.hostname() === this.hostname) {
-					this.canSignalDebugger = true;
-				}
-			}
-
+			this.canSignalDebugger = await this.canSignalHeuristic();
 		}
 
 		try {

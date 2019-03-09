@@ -350,6 +350,35 @@ export class PerlDebugSession extends LoggingDebugSession {
 	// 	this.sendResponse(response);
 	// }
 
+	private async checkSignaling(): Promise<boolean> {
+
+		if (!this.adapter.canSignalDebugger) {
+			return false;
+		}
+
+		// When we get here, it looks as though we run on the same host
+		// and our user also has a process with a process identifier that
+		// matches the one we got from the debugger. Check if we can make
+		// the debugger send us a SIGINT. If that works, we assume that
+		// the other direction works aswell. In the unlikely worst case,
+		// the signal goes to the wrong process on a different machine.
+
+		const result = Promise.race<boolean>([
+			new Promise(resolve => {
+				process.once('SIGINT', () => resolve(true))
+			}),
+			new Promise((resolve, reject) => {
+				setTimeout(() => resolve(false), 200)
+			})
+		]);
+
+	  await this.adapter.getExpressionValue(
+			`CORE::kill('INT', ${process.pid})`
+	  );
+
+	  return result;
+	}
+
 	protected terminateRequest(response: DebugProtocol.TerminateResponse, args: DebugProtocol.TerminateArguments): void {
 
 		if (!this.adapter.canSignalDebugger) {
@@ -366,19 +395,18 @@ export class PerlDebugSession extends LoggingDebugSession {
 			// Send SIGTERM to the `perl -d` process on the local system.
 			process.kill(this.adapter.debuggerPid, 'SIGTERM');
 			this.sendResponse(response);
-//			this.adapter.destroy();
-//			this.adapter = null;
 
 		}
 
-		response.success = false;
-		this.sendResponse(response);
 	}
 
 	protected pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments): void {
 
-		// TODO: log when this is called even though we think we are
-		// _stopped already.
+		if (this._stopped) {
+			this.sendEvent(new OutputEvent(
+				`Warning: Pause request to stopped debugger`
+			));
+		}
 
 		this._stopped = false;
 		if (!this.adapter.canSignalDebugger) {
