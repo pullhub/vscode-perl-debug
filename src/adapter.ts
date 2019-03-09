@@ -590,6 +590,15 @@ export class perlDebuggerConnection extends EventEmitter {
 
 	private async installSubroutines() {
 
+		// https://metacpan.org/pod/Devel::vscode register a namespace
+		// on CPAN for use in this extension. For some features, we have
+		// to execute Perl code in the debugger, and sometimes it can be
+		// unwieldy to send the whole code to the debugger every time.
+		// There are also features that benefit from persisting data on
+		// Perl's end. So this installs a couple of subroutines for such
+		// features. For these, it is not necessary for users of the
+		// extension to install or otherwise load `Devel::vscode`.
+
 		const singleLine = (strings, ...args) => {
 			return strings.join('').replace(/\n/g, " ");
 		};
@@ -1114,6 +1123,21 @@ export class perlDebuggerConnection extends EventEmitter {
 			/([\\'])/g,
 			'\\$1'
 		);
+	}
+
+	public terminateDebugger(): boolean {
+
+		if (this.canSignalDebugger) {
+
+			// Send SIGTERM to the `perl -d` process on the local system.
+			process.kill(this.debuggerPid, 'SIGTERM');
+			return true;
+
+		} else {
+
+			return false;
+		}
+
 	}
 
 	async destroy() {

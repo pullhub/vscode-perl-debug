@@ -233,6 +233,9 @@ export class PerlDebugSession extends LoggingDebugSession {
 			});
 		}
 
+		// TODO(bh): If the user manually launches two debug sessions in
+		// parallel, this would clear output from one of the sessions
+		// when starting the other one. That is not ideal.
 		if (args.console !== '_attach') {
 			this.sendEvent(new Event('perl-debug.streamcatcher.clear'));
 		}
@@ -317,22 +320,6 @@ export class PerlDebugSession extends LoggingDebugSession {
  */
 
 	/**
-	 * Data breakpoints
-	 */
-	protected setDataBreakpointsRequest(response: DebugProtocol.SetDataBreakpointsResponse, args: DebugProtocol.SetDataBreakpointsArguments) {
-		response.success = false;
-		this.sendResponse(response);
-	}
-
-	/**
-	 * Data breakpoint info
-	 */
-	protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments) {
-		response.success = false;
-		this.sendResponse(response);
-	}
-
-	/**
 	 * Reverse continue
 	 */
 	protected reverseContinueRequest(response: DebugProtocol.ReverseContinueResponse, args: DebugProtocol.ReverseContinueArguments) : void {
@@ -390,21 +377,23 @@ export class PerlDebugSession extends LoggingDebugSession {
 	  return result;
 	}
 
-	protected terminateRequest(response: DebugProtocol.TerminateResponse, args: DebugProtocol.TerminateArguments): void {
+	protected terminateRequest(
+		response: DebugProtocol.TerminateResponse,
+		args: DebugProtocol.TerminateArguments
+	): void {
 
-		if (!this.adapter.canSignalDebugger) {
-			response.success = false;
-			response.body = {
-				error: {
-					message: 'Cannot send SIGINT to debugger on remote system'
-				}
-			};
+		if (this.adapter.terminateDebugger()) {
+
 			this.sendResponse(response);
 
 		} else {
 
-			// Send SIGTERM to the `perl -d` process on the local system.
-			process.kill(this.adapter.debuggerPid, 'SIGTERM');
+			response.success = false;
+			response.body = {
+				error: {
+					message: 'Cannot send SIGTERM to debugger on remote system'
+				}
+			};
 			this.sendResponse(response);
 
 		}
