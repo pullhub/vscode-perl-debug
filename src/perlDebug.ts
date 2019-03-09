@@ -53,6 +53,8 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	private _breakpointId = 1000;
 
+	private _stopped?: boolean;
+
 	private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
 
 	private _functionBreakPoints: Map<string, DebugProtocol.Breakpoint>
@@ -105,6 +107,14 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 		this.adapter.on('perl-debug.termination', (x) => {
 			this.sendEvent(new TerminatedEvent());
+		});
+
+		this.adapter.on('perl-debug.stopped', (x) => {
+			if (!this._stopped) {
+				this._stopped = true;
+				// FIXME: this is not always the true reason.
+				this.sendEvent(new StoppedEvent("breakpoint", PerlDebugSession.THREAD_ID));
+			}
 		});
 
 		this.adapter.on('perl-debug.close', (x) => {
@@ -277,7 +287,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 		// return the default thread
 		response.body = {
 			threads: [
-				new Thread(PerlDebugSession.THREAD_ID, "thread 1")
+				new Thread(PerlDebugSession.THREAD_ID, `${this.adapter.programBasename} (pid ${this.adapter.debuggerPid} on ${this.adapter.hostname})`)
 			]
 		};
 		this.sendResponse(response);
@@ -340,6 +350,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	protected pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments): void {
 
+		this._stopped = false;
 		if (!this && this.adapter.isRemote) {
 			response.success = false;
 			response.body = {
@@ -528,65 +539,28 @@ export class PerlDebugSession extends LoggingDebugSession {
 	/**
 	 * Step out
 	 */
-    protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments): void {
-		this.adapter.request('r')
-			.then((res) => {
-
-				this.sendResponse(response);
-
-				if (res.finished) {
-					this.sendEvent(new TerminatedEvent());
-				} else {
-					this.sendEvent(new StoppedEvent("step", PerlDebugSession.THREAD_ID));
-				}
-				// no more lines: run to end
-			})
-			.catch(err => {
-				const [ error = err ] = err.errors || [];
-				if (err.exception) {
-					this.sendEvent(new StoppedEvent("exception", PerlDebugSession.THREAD_ID, error.near));
-				} else {
-					this.sendEvent(new OutputEvent(`ERR>StepOut error: ${error.message}\n`));
-					this.sendEvent(new TerminatedEvent());
-				}
-				response.success = false;
-				this.sendResponse(response);
-			});
+	protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments): void {
+		this._stopped = false;
+		this.adapter.request('r');
+		this.sendResponse(response);
+		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
 	}
 
 	/**
 	 * Step in
 	 */
-    protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
-		this.adapter.request('s')
-			.then((res) => {
-
-				this.sendResponse(response);
-
-				if (res.finished) {
-					this.sendEvent(new TerminatedEvent());
-				} else {
-					this.sendEvent(new StoppedEvent("step", PerlDebugSession.THREAD_ID));
-				}
-				// no more lines: run to end
-			})
-			.catch(err => {
-				const [ error = err ] = err.errors || [];
-				if (err.exception) {
-					this.sendEvent(new StoppedEvent("exception", PerlDebugSession.THREAD_ID, error.near));
-				} else {
-					this.sendEvent(new OutputEvent(`ERR>StepIn error: ${error.message}\n`));
-					this.sendEvent(new TerminatedEvent());
-				}
-				response.success = false;
-				this.sendResponse(response);
-			});
+	protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
+		this._stopped = false;
+		this.adapter.request('s');
+		this.sendResponse(response);
+		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
 	}
 
 	/**
 	 * Restart
 	 */
 	private async restartRequestAsync(response: DebugProtocol.RestartResponse, args: DebugProtocol.RestartArguments): Promise<DebugProtocol.RestartResponse> {
+		this._stopped = false;
 		const res = await this.adapter.request('R')
 		if (res.finished) {
 			this.sendEvent(new TerminatedEvent());
@@ -675,31 +649,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 * Next
 	 */
 	protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-		this.adapter.request('n')
-			.then((res) => {
-
-				this.sendResponse(response);
-
-				if (res.finished) {
-					this.sendEvent(new TerminatedEvent());
-				} else {
-					this.sendEvent(new StoppedEvent("step", PerlDebugSession.THREAD_ID));
-				}
-				// no more lines: run to end
-			})
-			.catch(err => {
-				const [ error = err ] = err.errors || [];
-				if (err.exception) {
-					this.sendEvent(new StoppedEvent("exception", PerlDebugSession.THREAD_ID, error.near));
-				} else {
-					this.sendEvent(new OutputEvent(`ERR>Next error: ${error.message}\n`));
-					this.sendEvent(new TerminatedEvent());
-				}
-				response.success = false;
-				this.sendResponse(response);
-			});
+		this._stopped = false;
+		this.adapter.request('n');
+		this.sendResponse(response);
+		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
 	}
-
 
 	/**
 	 * Continue
@@ -710,37 +664,13 @@ export class PerlDebugSession extends LoggingDebugSession {
 		// send this event in response to a request that implies that
 		// execution continues, e.g. ‘launch’ or ‘continue’." -- but in
 		// our case sending the `c` command to the debugger is never
-		// acknowledged by the debugger, we cannot tell if it succeeded
-		// and the promise below is resolved only once the debugger has
-		// halted execution of the debuggee again. Without a response to
-		// the `continueRequest`, vscode does not offer users a `pause`
-		// button, so without sending this event, we cannot pause from
-		// the debug user interface. So we send the event...
+		// acknowledged by the debugger, we cannot tell if it succeeded.
 
-		this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
+		this._stopped = false;
+		this.adapter.request('c');
+		this.sendResponse(response);
+		// this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
 
-		this.adapter.request('c')
-			.then((res) => {
-				this.sendResponse(response);
-
-				if (res.finished) {
-					this.sendEvent(new TerminatedEvent());
-				} else {
-					this.sendEvent(new StoppedEvent("breakpoint", PerlDebugSession.THREAD_ID));
-				}
-			})
-			.catch((err) => {
-				const [ error = err ] = err.errors || [];
-				if (err.exception) {
-					this.sendEvent(new StoppedEvent("exception", PerlDebugSession.THREAD_ID, error.near));
-				} else {
-					this.sendEvent(new OutputEvent(`ERR>Continue error: ${error.message}\n`));
-					this.sendEvent(new TerminatedEvent());
-				}
-
-				response.success = false;
-				this.sendResponse(response);
-			});
 	}
 
 	/**

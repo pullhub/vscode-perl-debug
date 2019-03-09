@@ -123,6 +123,7 @@ export class perlDebuggerConnection extends EventEmitter {
 	public commandRunning: string = '';
 	public isRemote: boolean = false;
 	public debuggerPid?: number;
+	public programBasename?: string;
 
 	private filename?: string;
 	private rootPath?: string;
@@ -341,6 +342,8 @@ export class perlDebuggerConnection extends EventEmitter {
 		} else if (res.finished) {
 			this.emit('perl-debug.termination', res);
 		}
+
+		this.emit('perl-debug.stopped');
 
 		this.logRequestResponse(res);
 
@@ -690,6 +693,8 @@ export class perlDebuggerConnection extends EventEmitter {
 		// used to implement the `pauseRequest`.
 		this.debuggerPid = await this.getDebuggerPid();
 
+		this.programBasename = await this.getProgramBasename();
+
 		try {
 			// Get the version just after
 			this.perlVersion = await this.getPerlVersion();
@@ -1008,6 +1013,13 @@ export class perlDebuggerConnection extends EventEmitter {
 		);
 		const [ result = undefined ] = res.data;
 		return result;
+	}
+
+	async getProgramBasename(): Promise<string> {
+		const res = await this.request(
+			'p $0'
+		);
+		return (res.data[0] || '').replace(/.*[\/\\](.*)/, '$1');
 	}
 
 	async resolveFilename(filename): Promise<string> {
