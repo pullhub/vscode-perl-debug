@@ -77,11 +77,20 @@ function handleAttachableEvent(
 		request: 'launch',
 
 		// Sadly better https://github.com/Microsoft/vscode/issues/70104
-		// names do not seem possible at the moment, but that may change
+		// names do not seem possible at the moment, but that may change.
 		name: `auto ${event.body.src.address}:${event.body.src.port}`,
 
 		port: event.body.dst.port,
+
+		// The `console` attribute is abused here to make a pseudo-attach
+		// request. The main reason is that actual `attachRequest` setups
+		// would cause vscode to offer a "disconnect" button rather than
+		// a stop/terminate button in the debugging toolbar, which is not
+		// what would happen when users press it, since we actually will
+		// try to terminate the debuggee.
 		console: "_attach",
+
+		// FIXME(bh): not sure if this actually needs to be overridden.
 		debugServer: null,
 	};
 

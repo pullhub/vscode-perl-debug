@@ -192,7 +192,8 @@
                   "integratedTerminal",
                   "externalTerminal",
                   "remote",
-                  "none"
+                  "none",
+                  "_attach"
                 ],
                 "description": "Where to launch the debug target",
                 "default": "integratedTerminal"
@@ -234,6 +235,7 @@
             "args": [],
             "env": {},
             "debugRaw": false,
+            "debugLog": false,
             "stopOnEntry": true,
             "sessions": "single"
           },

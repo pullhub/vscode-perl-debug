@@ -11,6 +11,8 @@ A debugger for perl in vs code.
 ### Features
 
 * Breakpoints *(continue, step over, step in, step out)*
+* Function breakpoints *(for now functions have to be loaded at launch)*
+* Process control *(pause, resume, restart)*
 * Stacktrace
 * Variable inspection *(support for objects, arrays, strings, numbers and boolean)*
 * Variable watching *(for now we don't create actual watch breakpoints - figuring out how to maintain t)*
@@ -18,6 +20,7 @@ A debugger for perl in vs code.
 * Debug console for writing expressions *(write perl expressions in the debug console)*
 * Variable values on hover in code
 * Loaded modules view *(including source code retrieval from remote)*
+* Multi-session/multi-target debugging *(including support for `fork` where available)*
 
 ### Settings
 
@@ -30,6 +33,8 @@ A debugger for perl in vs code.
 * `port` Number for port to listen for remote debuggers to connect to. *(Used only for remote debugging)*
 * `console` String to identify where to launch the debuggee
 * `debugRaw` Boolean to enable logging of raw I/O with the Perl debugger in an output channel
+* `debugLog` Boolean to enable logging of other debug messages in an output channel
+* `sessions` String to configure how child processes are handled
 
 ### Setup notes
 
@@ -68,6 +73,24 @@ eg.:
  $ PERLDB_OPTS="RemotePort=localhost:5000" perl -d test.pl
 ```
 *`localhost` should be replaced by the ip address*
+
+### Handling multiple processes
+
+Visual Studio Code supports running multiple debugging sessions in
+parallel, if you have multiple configurations in your `launch.json`,
+you can start several of them simultaneously.
+
+The extension can also automatically start additional debug sessions
+when a Perl process `fork`s or if multiple debuggers try to connect
+to connect to the same `port`. To illustrate, with `launch.json` like
+
+```json
+...
+  "sessions": "break"
+...
+```
+
+Then you can ...
 
 ### Stability
 

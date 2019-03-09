@@ -174,10 +174,6 @@ export class perlDebuggerConnection extends EventEmitter {
 			changes: [],
 		};
 
-		if (res.orgData.filter(x => /Watchpoint/.test(x)).length > 0) {
-			this.logOutput("");
-		}
-
 		res.orgData.forEach((line, i) => {
 			if (i === 0) {
 				// Command line
@@ -210,7 +206,7 @@ export class perlDebuggerConnection extends EventEmitter {
 				}
 
 				if (/^Daughter DB session started\.\.\./.test(line)) {
-					// TODO(bh): The `perl5db.pl` here is a bit odd, using the
+					// TODO(bh): `perl5db.pl` is a bit odd here, when using the
 					// typical `TERM=xterm perl -d` this is printed in the main
 					// console, but with RemotePort set, this seems to launch a
 					// new tty and does nothing with it but print this message.
@@ -253,35 +249,36 @@ export class perlDebuggerConnection extends EventEmitter {
 				// NOTE: this was supposed to handle when `w $$` triggers,
 				// but it turns out `perl5db.pl` prints this to the wrong
 				// tty, that is, in the fork() parent, while the change is
-				// actually in the child. Also, this probably needs to go
-				// into the streamcatcher, as it is not a response to any
-				// request?
+				// actually in the child.
 
-				// // Watchpoint 0: $example changed:
-				// if (RX.watchpointChange.test(line)) {
-				// 	const parts = line.match(RX.watchpointChange);
-				// 	const [, unstableId, expression ] = parts;
-				// 	res.changes.push({
-				// 		expression: expression,
-				// 	});
-				// }
+				// Watchpoint 0: $example changed:
+				if (RX.watchpointChange.test(line)) {
+					const parts = line.match(RX.watchpointChange);
+					const [, unstableId, expression ] = parts;
+					res.changes.push({
+						expression: expression,
+					});
+				}
 
-				// if (RX.watchpointOldval.test(line)) {
-				// 	const parts = line.match(RX.watchpointOldval);
-				// 	const [, oldValue ] = parts;
+				if (RX.watchpointOldval.test(line)) {
+					const parts = line.match(RX.watchpointOldval);
+					const [, oldValue ] = parts;
 
-				// 	// FIXME(bh): This approach for handling watchpoint changes
-				// 	// is probably not sound if the expression being watched
-				// 	// stringifies as multiple lines. But internally we only
-				// 	// use a single watch expression where this is not an issue
-				// 	res.changes[res.changes.length - 1].oldValue = oldValue;
-				// }
+					// FIXME(bh): This approach for handling watchpoint changes
+					// is probably not sound if the expression being watched
+					// stringifies as multiple lines. But internally we only
+					// use a single watch expression where this is not an issue
+					// and for data breakpoints configured through vscode user
+					// interface it might be best to wrap expression so that it
+					// would not be possible to get multiple lines in return.
+					res.changes[res.changes.length - 1].oldValue = oldValue;
+				}
 
-				// if (RX.watchpointNewval.test(line)) {
-				// 	const parts = line.match(RX.watchpointNewval);
-				// 	const [, newValue ] = parts;
-				// 	res.changes[res.changes.length - 1].newValue = newValue;
-				// }
+				if (RX.watchpointNewval.test(line)) {
+					const parts = line.match(RX.watchpointNewval);
+					const [, newValue ] = parts;
+					res.changes[res.changes.length - 1].newValue = newValue;
+				}
 
 				if (/^Debugged program terminated/.test(line)) {
 					res.finished = true;
@@ -339,6 +336,13 @@ export class perlDebuggerConnection extends EventEmitter {
 			this.emit('perl-debug.exception', res);
 		} else if (res.finished) {
 			this.emit('perl-debug.termination', res);
+		}
+
+		// This should eventually be forwarded to `perlDebug.ts` where
+		// it should cause a StoppedEvent with `data breakpoint` to be
+		// sent.
+		if (res.changes.length > 0) {
+			this.emit('perl-debug.databreak', res);
 		}
 
 		this.emit('perl-debug.stopped');
@@ -584,6 +588,38 @@ export class perlDebuggerConnection extends EventEmitter {
 		return true;
 	}
 
+	private async installSubroutines() {
+
+		const singleLine = (strings, ...args) => {
+			return strings.join('').replace(/\n/g, " ");
+		};
+
+		const unreportedSources = singleLine`
+			sub Devel::vscode::_unreportedSources {
+				return join "\t", grep {
+					my $old = $Devel::vscode::_reportedSources{$_};
+					$Devel::vscode::_reportedSources{$_} = $$;
+					not defined $old or $old ne $$
+				} grep { /^_<[^(]/ } keys %main::
+			}
+		`;
+
+		// Perl stores file source code in `@{main::_<example.pl}`
+		// arrays. This retrieves the code in %xx-escaped form to
+		// ensure we only get a single line of output.
+		const getSourceCode = singleLine`
+			sub Devel::vscode::_getSourceCode {
+				local $_ = join("", @{"main::_<@_"});
+				s/([^a-zA-Z0-9\\x{80}-\\x{10FFFF}])/
+					sprintf '%%%02x', ord "$1"/ge;
+				return $_
+			}
+		`;
+
+		await this.request(unreportedSources);
+		await this.request(getSourceCode);
+	}
+
 	async launchRequest(
 		args: LaunchRequestArguments,
 		session: PerlDebugSession
@@ -755,6 +791,8 @@ export class perlDebuggerConnection extends EventEmitter {
 			// xxx: Ignore errors - it should not break anything, this is used to
 			// inform the user of a missing dependency install of PadWalker
 		}
+
+		await this.installSubroutines();
 
 		return this.parseResponse(data);
 	}
@@ -978,10 +1016,10 @@ export class perlDebuggerConnection extends EventEmitter {
 	async getLoadedFiles(): Promise<string[]> {
 
 		const loadedFiles = await this.getExpressionValue(
-			'join "\t", grep { /^_</ } keys %main::'
+			'Devel::vscode::_unreportedSources() if defined &Devel::vscode::_unreportedSources'
 		);
 
-		return loadedFiles
+		return (loadedFiles || '')
 			.split(/\t/)
 			.filter(x => !/^_<\(eval \d+\)/.test(x))
 			.map(x => x.replace(/^_</, ''));
@@ -993,20 +1031,11 @@ export class perlDebuggerConnection extends EventEmitter {
 		// NOTE: `perlPath` must be a path known to Perl, there is
 		// no path translation at this point.
 
-		const escapedPath = perlPath.replace(
-			/([\\'])/g,
-			'\\$1'
-		);
+		const escapedPath = this.escapeForSingleQuotes(perlPath);
 
 		return decodeURIComponent(
-			// Perl stores file source code in `@{main::_<example.pl}`
-			// arrays. This retrieves the code in %xx-escaped form to
-			// ensure we only get a single line of output. This could
-			// perhaps be done generically for all expressions.
 			await this.getExpressionValue(
-				`sub { local $_ = join("", @{"main::_<@_"});\
-				s/([^a-zA-Z0-9\\x{80}-\\x{10FFFF}])/\
-				sprintf '%%%02x', ord "\$1"/ge; \$_ }->('${escapedPath}')`
+				`Devel::vscode::_getSourceCode('${escapedPath}')`
 			)
 		);
 
@@ -1078,6 +1107,13 @@ export class perlDebuggerConnection extends EventEmitter {
 		const res = await this.request(`p $INC{"${filename}"};`);
 		const [ result = '' ] = res.data;
 		return result;
+	}
+
+	public escapeForSingleQuotes(unescaped: string): string {
+		return unescaped.replace(
+			/([\\'])/g,
+			'\\$1'
+		);
 	}
 
 	async destroy() {

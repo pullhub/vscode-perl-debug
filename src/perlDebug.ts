@@ -13,7 +13,7 @@ import {readFileSync} from 'fs';
 import {basename, dirname, join} from 'path';
 import {spawn, ChildProcess} from 'child_process';
 const { Subject } = require('await-notify');
-import { perlDebuggerConnection } from './adapter';
+import { perlDebuggerConnection, RequestResponse } from './adapter';
 import { variableType, ParsedVariable, ParsedVariableScope, resolveVariable } from './variableParser';
 
 /**
@@ -178,6 +178,39 @@ export class PerlDebugSession extends LoggingDebugSession {
 		this._configurationDone.notify();
 	}
 
+	private stepAfterFork(
+		sessions: string,
+		launchResponse: RequestResponse
+	) {
+
+		const stoppedInForkWrapper =
+			/^Devel::vscode::_fork/.test(launchResponse.data[0] || "");
+
+		const pidsInDebuggerPrompt =
+			/^\[pid=/.test(launchResponse.db);
+
+		if (stoppedInForkWrapper && sessions === 'break') {
+			// step out of the wrapper
+			this.adapter.request('s');
+		}
+
+		if (sessions === 'watch') {
+
+			this.adapter.request('c');
+			this.sendEvent(
+				new ContinuedEvent(PerlDebugSession.THREAD_ID)
+			);
+
+		} else if (sessions === 'break') {
+
+			this.sendEvent(
+				new StoppedEvent("postfork", PerlDebugSession.THREAD_ID)
+			);
+
+		}
+
+	}
+
 	protected async launchRequest(
 		response: DebugProtocol.LaunchResponse,
 		args: LaunchRequestArguments
@@ -200,10 +233,9 @@ export class PerlDebugSession extends LoggingDebugSession {
 			});
 		}
 
-		// FIXME(bh): Should only be done if this is a new main session.
-		// Perhaps use a private launch config option to indicate if this
-		// is a child session?
-//		this.sendEvent(new Event('perl-debug.streamcatcher.clear'));
+		if (args.console !== '_attach') {
+			this.sendEvent(new Event('perl-debug.streamcatcher.clear'));
+		}
 
 		const launchResponse = await this.adapter.launchRequest(
 			args,
@@ -223,33 +255,12 @@ export class PerlDebugSession extends LoggingDebugSession {
 		// With the event sent vscode should now send us breakpoint and
 		// other configuration requests and signals us that it done doing
 		// so with a `configurationDoneRequest`, so we wait here for it.
-		await this._configurationDone.wait(1000);
+		await this._configurationDone.wait(2000);
 
-		// FIXME(bh): This code needs refactoring. In addition to deep
-		// nesting of control logic, it is probably a bad idea to abuse
-		// the response to this request in this manner.
-		if (
-			(args.sessions || 'single') !== 'single'
-			&&
-			(
-				/^Devel::vscode::_fork/.test(launchResponse.data[0] || "")
-				||
-				/^\[pid=/.test(launchResponse.db)
-			)
-		) {
-			if (args.sessions === 'watch') {
+		if (args.console === '_attach') {
 
-				this.adapter.request('c');
-				this.sendEvent(new ContinuedEvent(PerlDebugSession.THREAD_ID));
+			this.stepAfterFork(args.sessions, launchResponse);
 
-			} else if (args.sessions === 'break') {
-
-				if (/^Devel::vscode::_fork/.test(launchResponse.data[0] || "")) {
-					this.adapter.request('s');
-				}
-				this.sendEvent(new StoppedEvent("postfork", PerlDebugSession.THREAD_ID));
-
-			}
 		} else if (args.stopOnEntry) {
 
 			this.sendResponse(response);
@@ -432,13 +443,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 		return /^[':A-Za-z_][':\w]*$/.test(name);
 	}
 
-	private escapeForSingleQuotes(unescaped: string): string {
-		return unescaped.replace(
-			/([\\'])/g,
-			'\\$1'
-		);
-	}
-
 	private async setFunctionBreakPointAsync(
 		bp: DebugProtocol.FunctionBreakpoint
 	): Promise<DebugProtocol.Breakpoint> {
@@ -473,7 +477,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 		// ways. Not sure if vscode actually uses the values though.
 
 		const pathPos = await this.adapter.getExpressionValue(
-			`$DB::sub{'${this.escapeForSingleQuotes(bp.name)}'}`
+			`$DB::sub{'${this.adapter.escapeForSingleQuotes(bp.name)}'}`
 		);
 
 		const [ bpWhole, bpFile, bpFirst, bpLast ] = pathPos
@@ -992,9 +996,9 @@ export class PerlDebugSession extends LoggingDebugSession {
 				// open the local file rather than retrieving a read-only
 				// version of the code through the debugger (that lacks code
 				// past `__END__` markers, among possibly other limitations).
-				!this.adapter.canSignalDebugger
-					? this._loadedSources.size
-					: 0
+				this.adapter.canSignalDebugger
+					? 0
+					: this._loadedSources.size
 			);
 
 			this.sendEvent(new LoadedSourceEvent("new", newSource));
