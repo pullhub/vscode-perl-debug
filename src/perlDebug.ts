@@ -160,6 +160,8 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 				response.body.supportsLoadedSourcesRequest = true;
 
+				response.body.supportsTerminateRequest = true;
+
 				this.sendResponse(response);
 
 			});
@@ -178,21 +180,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	protected async launchRequest(
 		response: DebugProtocol.LaunchResponse,
-		args: LaunchRequestArguments
-	) {
-		this.launchAndAttachRequest(response, args);
-	}
-
-	protected async attachRequest(
-		response: DebugProtocol.AttachResponse,
-		args: DebugProtocol.AttachRequestArguments
-	) {
-		this.sendEvent(new OutputEvent('attachRequest\n'));
-		this.launchAndAttachRequest(response, <LaunchRequestArguments>args);
-	}
-
-	private async launchAndAttachRequest(
-		response: DebugProtocol.Response,
 		args: LaunchRequestArguments
 	) {
 
@@ -257,7 +244,9 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 			} else if (args.sessions === 'break') {
 
-				this.adapter.request('s');
+				if (/^Devel::vscode::_fork/.test(launchResponse.data[0] || "")) {
+					this.adapter.request('s');
+				}
 				this.sendEvent(new StoppedEvent("postfork", PerlDebugSession.THREAD_ID));
 
 			}
@@ -356,13 +345,43 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 
 
+	// protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments): void {
+	// 	response.success = false;
+	// 	this.sendResponse(response);
+	// }
 
+	protected terminateRequest(response: DebugProtocol.TerminateResponse, args: DebugProtocol.TerminateArguments): void {
 
+		if (!this.adapter.canSignalDebugger) {
+			response.success = false;
+			response.body = {
+				error: {
+					message: 'Cannot send SIGINT to debugger on remote system'
+				}
+			};
+			this.sendResponse(response);
+
+		} else {
+
+			// Send SIGTERM to the `perl -d` process on the local system.
+			process.kill(this.adapter.debuggerPid, 'SIGTERM');
+			this.sendResponse(response);
+//			this.adapter.destroy();
+//			this.adapter = null;
+
+		}
+
+		response.success = false;
+		this.sendResponse(response);
+	}
 
 	protected pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments): void {
 
+		// TODO: log when this is called even though we think we are
+		// _stopped already.
+
 		this._stopped = false;
-		if (!this && this.adapter.isRemote) {
+		if (!this.adapter.canSignalDebugger) {
 			response.success = false;
 			response.body = {
 				error: {
@@ -376,15 +395,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 			// Send SIGINT to the `perl -d` process on the local system.
 			process.kill(this.adapter.debuggerPid, 'SIGINT');
 			this.sendResponse(response);
-
-			// TODO(bh): It is not clear if we are supposed to also send a
-			// `StoppedEvent` and if we are, what the logic for that ought
-			// to be. Basically, whenever we see the `DB<N>` prompt from
-			// the debugger we are most probably stopped. That's the same
-			// for all protocol functions though, which suggests that ought
-			// to be handled centrally someplace, and not individually for
-			// each request. As it is, in any case, it does not seem to
-			// make a difference in vscode whether send one here or not.
 
 		}
 
@@ -954,7 +964,7 @@ export class PerlDebugSession extends LoggingDebugSession {
 				// open the local file rather than retrieving a read-only
 				// version of the code through the debugger (that lacks code
 				// past `__END__` markers, among possibly other limitations).
-				this.adapter.isRemote
+				!this.adapter.canSignalDebugger
 					? this._loadedSources.size
 					: 0
 			);

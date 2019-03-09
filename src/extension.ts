@@ -74,14 +74,14 @@ function handleAttachableEvent(
 	const config: vscode.DebugConfiguration = {
 		...vscode.debug.activeDebugSession.configuration,
 		type: 'perl',
-		request: 'attach',
+		request: 'launch',
 
 		// Sadly better https://github.com/Microsoft/vscode/issues/70104
 		// names do not seem possible at the moment, but that may change
 		name: `auto ${event.body.src.address}:${event.body.src.port}`,
 
 		port: event.body.dst.port,
-		console: "none",
+		console: "_attach",
 		debugServer: null,
 	};
 

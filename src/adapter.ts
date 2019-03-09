@@ -1,5 +1,6 @@
 import {join, dirname, sep} from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {spawn} from 'child_process';
 import {StreamCatcher} from './streamCatcher';
@@ -17,6 +18,8 @@ import {
 	Event as VscodeEvent
 } from 'vscode-debugadapter';
 import { EventEmitter } from 'events';
+import { timingSafeEqual } from 'crypto';
+import { O_SYMLINK } from 'constants';
 
 interface ResponseError {
 	filename: string,
@@ -121,7 +124,7 @@ export class perlDebuggerConnection extends EventEmitter {
 	public develVscodeVersion?: string;
 	public hostname?: string;
 	public commandRunning: string = '';
-	public isRemote: boolean = false;
+	public canSignalDebugger: boolean = false;
 	public debuggerPid?: number;
 	public programBasename?: string;
 
@@ -350,14 +353,13 @@ export class perlDebuggerConnection extends EventEmitter {
 		return res;
 	}
 
-	private async attachRequest(
+	private async launchRequestAttach(
 		args: LaunchRequestArguments
 	): Promise<void> {
 
 		const bindHost = 'localhost';
 
-		// ???
-		this.isRemote = false;
+		this.canSignalDebugger = false;
 
 		this.perlDebugger = new AttachSession(args.port, bindHost);
 
@@ -372,7 +374,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		session: PerlDebugSession
 	): Promise<void> {
 
-		this.isRemote = false;
+		this.canSignalDebugger = true;
 		this.logOutput(`Launching program in terminal and waiting`);
 
 		// NOTE(bh): `localhost` is hardcoded here to ensure that for
@@ -434,7 +436,7 @@ export class perlDebuggerConnection extends EventEmitter {
 
 		const bindHost = 'localhost';
 
-		this.isRemote = false;
+		this.canSignalDebugger = true;
 		this.perlDebugger = new RemoteSession(
 			0,
 			bindHost,
@@ -479,7 +481,7 @@ export class perlDebuggerConnection extends EventEmitter {
 			'0.0.0.0',
 			args.sessions
 		);
-		this.isRemote = true;
+		this.canSignalDebugger = false;
 
 		// FIXME(bh): this does not await the listening event since we
 		// already know the port number beforehand, and probably we do
@@ -520,14 +522,12 @@ export class perlDebuggerConnection extends EventEmitter {
 			}
 
 			case "none": {
+				await this.launchRequestNone(args);
+				break;
+			}
 
-				// FIXME: ought to check for "attach", not "port" hack
-				if (args.port) {
-					await this.attachRequest( args );
-				} else {
-					await this.launchRequestNone( args );
-				}
-
+			case "_attach": {
+				await this.launchRequestAttach(args);
 				break;
 			}
 
@@ -636,7 +636,6 @@ export class perlDebuggerConnection extends EventEmitter {
 
 		if (args.sessions !== 'single') {
 
-			this.hostname = await this.getHostname();
 			this.develVscodeVersion = await this.getDevelVscodeVersion();
 
 			if (!this.develVscodeVersion) {
@@ -694,6 +693,47 @@ export class perlDebuggerConnection extends EventEmitter {
 		this.debuggerPid = await this.getDebuggerPid();
 
 		this.programBasename = await this.getProgramBasename();
+		this.hostname = await this.getHostname();
+
+		// Execution control requests such as `terminate` and `pause` are
+		// at least in part implemented through sending signals to the
+		// debugger/debuggee process. That can only be done on the local
+		// system. But users might use remote debug configurations on the
+		// local machine, in which case it would be a shame if `pause`
+		// did not work.
+		//
+		// There is no easy and portable way to generate something like a
+		// globally unique process identifier that could be used to make
+		// sure we actually are on the same system, but a heuristic might
+		// be fair enough. If it looks as though Perl can signal us, and
+		// we can signal Perl, and we think we run on systems with the
+		// same hostname, we simply assume that we in fact do so.
+    //
+		// On Linux `/proc/sys/kernel/random/boot_id` could be compared,
+		// if we and Perl see the same contents, we very probably are on
+		// the same system. Similarily, other `/proc/` details could be
+		// compared.
+		if (!this.canSignalDebugger) {
+
+			const debuggerCanSignalUs = await this.getExpressionValue(
+				`CORE::kill(0, ${process.pid})`
+			);
+
+			let weCanSignalDebugger = false;
+
+			try {
+				process.kill(this.debuggerPid, 0);
+				weCanSignalDebugger = true;
+			} catch (e) {
+			}
+
+			if (debuggerCanSignalUs && weCanSignalDebugger) {
+				if (os.hostname() === this.hostname) {
+					this.canSignalDebugger = true;
+				}
+			}
+
+		}
 
 		try {
 			// Get the version just after
