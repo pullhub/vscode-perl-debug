@@ -7,6 +7,5 @@ export interface DebugSession {
 	stdin: Writable,
 	on: Function, // support "close", "error"
 	title: Function,
-	dump: Function, // Dump debug information
 	port: Number | null;
 }

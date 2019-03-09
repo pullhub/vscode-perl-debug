@@ -588,7 +588,7 @@ export class perlDebuggerConnection extends EventEmitter {
 			this.logDebug('error:', err);
 			this.logOutput( `Error`);
 			this.logOutput( err );
-			this.logOutput( `DUMP: ${this.perlDebugger.dump()}` );
+			this.logOutput( `DUMP: ${this.perlDebugger.title()}` );
 		});
 
 		// Handle program output
@@ -616,7 +616,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		this.streamCatcher.on('perl-debug.streamcatcher.data', (...x) => {
 			this.emit(
 				'perl-debug.streamcatcher.data',
-				this.perlDebugger.dump(),
+				this.perlDebugger.title(),
 				...x
 			);
 		});
@@ -624,7 +624,7 @@ export class perlDebuggerConnection extends EventEmitter {
 		this.streamCatcher.on('perl-debug.streamcatcher.write', (...x) => {
 			this.emit(
 				'perl-debug.streamcatcher.write',
-				this.perlDebugger.dump(),
+				this.perlDebugger.title(),
 				...x
 			);
 		});

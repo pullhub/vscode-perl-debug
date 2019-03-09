@@ -12,7 +12,6 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 	public stderr: Readable;
 	public kill: Function;
 	public title: Function;
-	public dump: Function;
 	public port: Number | null;
 
 	constructor(
@@ -157,9 +156,14 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 
 			server.close();
 		};
-		this.title = () => `Running debug server for remote session to connect on port "${port}"`;
-		this.dump = () => `debug server port ${port}`;
-		this.dump = () => `${server.address().address}:${server.address().port} serving ${client.remoteAddress}:${client.remotePort}`;
+		this.title = () => {
+			if (server && client) {
+				return `${server.address().address}:${server.address().port
+					} serving ${client.remoteAddress}:${client.remotePort}`;
+			} else {
+				return "Inactive RemoteSession";
+			}
+		};
 
 	}
 }

@@ -10,7 +10,6 @@ export class LocalSession extends EventEmitter implements DebugSession {
 	public stderr: Readable;
 	public kill: Function;
 	public title: Function;
-	public dump: Function;
 	public port: Number | null;
 
 	constructor(launchArgs: LaunchRequestArguments) {
@@ -44,7 +43,6 @@ export class LocalSession extends EventEmitter implements DebugSession {
 			this.removeAllListeners();
 			session.kill();
 		};
-		this.title = () => `${perlCommand} ${commandArgs.join(' ')}`;
-		this.dump = () => `spawn(${perlCommand}, ${JSON.stringify(commandArgs)}, ${JSON.stringify(spawnOptions)});`;
+		this.title = () => `spawn(${perlCommand}, ${JSON.stringify(commandArgs)}, ${JSON.stringify(spawnOptions)});`;
 	}
 }

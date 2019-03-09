@@ -10,7 +10,6 @@ export class AttachSession extends EventEmitter implements DebugSession {
 	public stderr: Readable;
 	public kill: Function;
 	public title: Function;
-	public dump: Function;
 	public port: Number | null;
 
 	constructor(port: number, address: string = "localhost") {
@@ -58,8 +57,8 @@ export class AttachSession extends EventEmitter implements DebugSession {
 			this.kill();
 		});
 
-		this.title = () => `attachSession on "${port}"`;
-		this.dump = () => `attachSession ${port}`;
+		this.title = () => `${client.localAddress}:${client.localPort
+			} attached to ${client.remoteAddress}:${client.remotePort}`;
 
 		this.kill = () => {
 			if (client) {
