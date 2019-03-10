@@ -103,7 +103,7 @@
       {
         "type": "perl",
         "label": "Perl Debug",
-        "program": "./out/perlDebug.js",
+        "program": "./out/debugAdapter.js",
         "runtime": "node",
         "languages": [
           "perl"

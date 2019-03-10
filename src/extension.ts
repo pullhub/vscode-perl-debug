@@ -99,7 +99,7 @@ function handleAttachableEvent(
 		config
 	).then((...x) => {
 		vscode.debug.activeDebugConsole.appendLine(
-			`Child session via ${event.body.address}:${event.body.port}`
+			`Child session ${event.body.src.address}:${event.body.src.port}`
 		);
 	});
 

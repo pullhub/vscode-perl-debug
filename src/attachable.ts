@@ -71,6 +71,14 @@ export class Attachable extends EventEmitter {
 				socket.resume();
 			});
 
+			// base.on('end', error => {
+			// 	socket.end();
+			// });
+
+			// socket.on('end', error => {
+			// 	base.end();
+			// });
+
 			base.on('close', error => {
 				socket.destroy();
 			});

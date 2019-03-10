@@ -80,8 +80,12 @@ export class RemoteSession extends EventEmitter implements DebugSession {
 
 					attachable.on('listening', address => {
 						this.emit('perl-debug.attachable.listening', {
-							src: socket.address(),
-							dst: address
+							src: {
+								address: socket.remoteAddress,
+								port: socket.remotePort,
+							},
+							via: socket.address(),
+							dst: address,
 						});
 					});
 

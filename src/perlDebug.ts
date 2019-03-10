@@ -53,8 +53,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	private _breakpointId = 1000;
 
-	private _stopped?: boolean;
-
 	private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
 
 	private _functionBreakPoints: Map<string, DebugProtocol.Breakpoint>
@@ -118,11 +116,11 @@ export class PerlDebugSession extends LoggingDebugSession {
 			// since we must not send a StoppedEvent when processing other
 			// requests where control is immediately passed back to us.
 
-			if (!this._stopped) {
-				this._stopped = true;
+//			if (!this._stopped) {
+//				this._stopped = true;
 				// FIXME: this is not always the true reason.
 				this.sendEvent(new StoppedEvent("breakpoint", PerlDebugSession.THREAD_ID));
-			}
+//			}
 		});
 
 		this.adapter.on('perl-debug.close', (x) => {
@@ -377,12 +375,24 @@ export class PerlDebugSession extends LoggingDebugSession {
 	  return result;
 	}
 
-	protected terminateRequest(
+	protected async disconnectRequest(
+		response: DebugProtocol.DisconnectResponse,
+		args: DebugProtocol.DisconnectArguments
+	): Promise<void> {
+
+		await this.adapter.destroy();
+
+	}
+
+	protected async terminateRequest(
 		response: DebugProtocol.TerminateResponse,
 		args: DebugProtocol.TerminateArguments
-	): void {
+	): Promise<void> {
 
 		if (this.adapter.terminateDebugger()) {
+
+			// FIXME(bh): Unsure whether to do this here.
+			await this.adapter.destroy();
 
 			this.sendResponse(response);
 
@@ -402,13 +412,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 
 	protected pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments): void {
 
-		if (this._stopped) {
-			this.sendEvent(new OutputEvent(
-				`Warning: Pause request to stopped debugger`
-			));
-		}
-
-		this._stopped = false;
 		if (!this.adapter.canSignalDebugger) {
 			response.success = false;
 			response.body = {
@@ -582,7 +585,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 * Step out
 	 */
 	protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments): void {
-		this._stopped = false;
 		this.adapter.request('r');
 		this.sendResponse(response);
 	}
@@ -591,7 +593,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 * Step in
 	 */
 	protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
-		this._stopped = false;
 		this.adapter.request('s');
 		this.sendResponse(response);
 	}
@@ -600,7 +601,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 * Restart
 	 */
 	private async restartRequestAsync(response: DebugProtocol.RestartResponse, args: DebugProtocol.RestartArguments): Promise<DebugProtocol.RestartResponse> {
-		this._stopped = false;
 		const res = await this.adapter.request('R')
 		if (res.finished) {
 			this.sendEvent(new TerminatedEvent());
@@ -689,7 +689,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 * Next
 	 */
 	protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-		this._stopped = false;
 		this.adapter.request('n');
 		this.sendResponse(response);
 	}
@@ -707,7 +706,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 		// Instead, responses are sent immediately and events are sent
 		// based on the actual state of the debugger.
 
-		this._stopped = false;
 		this.adapter.request('c');
 		this.sendResponse(response);
 	}

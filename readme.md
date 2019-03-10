@@ -65,7 +65,9 @@ A standard `launch.json` will resemble the following (on Windows, *nix distros w
 
 ### Remote debugger
 
-When setting the `port` attribute in `launch.json` the vs code debug extension will start a debug server for the remote perl debug instance to connect to.
+When setting the `console` attribute in `launch.json` to `remote` the
+vs code debug extension will start a debug server for the remote perl
+debug instance to connect to.
 
 eg.:
 ```bash
@@ -82,15 +84,39 @@ you can start several of them simultaneously.
 
 The extension can also automatically start additional debug sessions
 when a Perl process `fork`s or if multiple debuggers try to connect
-to connect to the same `port`. To illustrate, with `launch.json` like
+to the same `port`. This behaviour needs to be enabled with the
+`sessions` option. To illustrate, with `launch.json` like
 
 ```json
 ...
-  "sessions": "break"
+  "sessions": "watch",
+  "console": "remote",
+  "port": 5000,
 ...
 ```
 
-Then you can ...
+Then you can start a debug session in vscode and launch:
+
+```bash
+PERL5OPT=-d PERLDB_OPTS='RemotePort=localhost:5000' prove -l
+```
+
+All the Perl processes launched in one way or another by `prove` will
+then connect to the extension. In `watch` mode execution of dependent
+processes will continue immediately, in `break` mode they will stop
+on entry (like with `stopOnEntry` for the first or main process).
+
+When using this feature, it is recommended to use the debugger module
+[Devel::vscode](https://metacpan.org/pod/Devel::vscode). It overrides
+the `fork` function so that the Perl debugger connects to the
+extension right after `fork` returns in the child. When the module is
+not loaded, the extension creates a global watch expression `w $$` to
+the same effect, but that puts the debugger in trace mode, wich can
+slow down debugging considerably.
+
+When you start the perl process you want to debug, instead of `-d`,
+specify `-d:vscode`. If the extension starts the Perl process, set
+`execArgs: ["-d:vscode"]` in `launch.json`.
 
 ### Stability
 

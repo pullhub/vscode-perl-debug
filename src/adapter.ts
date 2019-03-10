@@ -174,6 +174,10 @@ export class perlDebuggerConnection extends EventEmitter {
 			changes: [],
 		};
 
+		if (res.orgData.filter(x => /exec @_ or do/.test(x)).length > 0) {
+			let abc = 123;
+		}
+
 		res.orgData.forEach((line, i) => {
 			if (i === 0) {
 				// Command line
@@ -329,7 +333,9 @@ export class perlDebuggerConnection extends EventEmitter {
 
 		if (res.finished) {
 			// Close the connection to perl debugger
-			this.perlDebugger.kill();
+			this.request('q')
+				.then(() => this.perlDebugger.kill())
+				.catch(() => this.perlDebugger.kill());
 		}
 
 		if (res.exception) {
@@ -338,14 +344,30 @@ export class perlDebuggerConnection extends EventEmitter {
 			this.emit('perl-debug.termination', res);
 		}
 
-		// This should eventually be forwarded to `perlDebug.ts` where
-		// it should cause a StoppedEvent with `data breakpoint` to be
-		// sent.
 		if (res.changes.length > 0) {
 			this.emit('perl-debug.databreak', res);
 		}
 
-		this.emit('perl-debug.stopped');
+		// FIXME(bh): v0.5.0 and earlier of the extension treated all the
+		// debugger commands the same, as if they return quickly and with
+		// a result of some kind. This led to confusion on part of vscode
+		// about whether the debuggee is currently running or stopped.
+		//
+		// We need to send a `StoppedEvent` when the debugger transitions
+		// from executing the debuggee to accepting commands from us, and
+		// must not send a `StoppedEvent` when we are in the middle of
+		// servicing requests from vscode to populate the debug user
+		// interface after a `StoppedEvent`, otherwise vscode will enter
+		// an infinite loop.
+		//
+		// So this is a bit of a kludge to do just that. Better would be
+		// a re-design of how I/O with the debugger works, like having a
+		// `resume(command: string)` method for these special commands,
+		// but that probably requires some surgery through streamCatcher.
+
+		if (/^[scnr]\b/.test(res.command)) {
+			this.emit('perl-debug.stopped');
+		}
 
 		this.logRequestResponse(res);
 
@@ -727,8 +749,6 @@ export class perlDebuggerConnection extends EventEmitter {
 				// the pid of the process changes; that can only happen right
 				// after a fork. This is needed to learn about new children
 				// when Devel::vscode is not loaded, see documentation there.
-				//
-				// https://github.com/Microsoft/debug-adapter-protocol/issues/30
 
 				await this.streamCatcher.request(
 					'w $$'
@@ -816,8 +836,17 @@ export class perlDebuggerConnection extends EventEmitter {
 
 	async setFileContext(filename: string = this.filename) {
 		// xxx: Apparently perl DB wants unix path separators on windows so
-		// we enforce the unix separator
-		const cleanFilename = filename.replace(/\\/g, '/');
+		// we enforce the unix separator. Also remove relative path steps;
+		// if the debugger does not know about a file path literally, it
+		// will try to find a matching file through a regex match, so this
+		// increases the odds of finding the right file considerably. An
+		// underlying issue here is that we cannot always use resolved
+		// paths because we do not know what a relative path is relative
+		// to.
+		const cleanFilename = filename
+			.replace(/\\/g, '/')
+			.replace(/^[..\/\\]+/g, '');
+
 		// await this.request(`print STDERR "${cleanFilename}"`);
 		const res = await this.request(`f ${cleanFilename}`);
 		if (res.data.length) {
