@@ -14,7 +14,7 @@ import { PerlDebugSession } from './perlDebug';
  * debug adapter should run inside the extension host.
  * Please note: the test suite does not (yet) work in this mode.
  */
-const EMBED_DEBUG_ADAPTER = true;
+const EMBED_DEBUG_ADAPTER = false;
 
 let perlDebugOutputChannel: vscode.OutputChannel | undefined;
 let streamCatcherOutputChannel: vscode.OutputChannel | undefined;
@@ -70,6 +70,18 @@ function handleStreamCatcherEvent(
 function handleAttachableEvent(
 	event: vscode.DebugSessionCustomEvent
 ) {
+
+	// FIXME(bh): When the user terminates the first/main process, and
+	// perhaps even if it exits before child or other processes do, we
+	// sever their connections to the extension, but probably do not
+	// kill them properly. It is not clear whether they should in fact
+	// be killed, it might be better to tell the user that terminating
+	// the main debug adapter instance in that situation is not a good
+	// idea. Sadly vscode does not offer many better alternatives here,
+	// short of hosting the main server that accepts `perl5db.pl`
+	// connections in the extension, but then we would not have access
+	// to the selected launch configuration, or would need more hacks
+	// to get that (when the user has a pre-configured port specified).
 
 	const config: vscode.DebugConfiguration = {
 		...vscode.debug.activeDebugSession.configuration,

@@ -108,26 +108,15 @@ export class PerlDebugSession extends LoggingDebugSession {
 		});
 
 		this.adapter.on('perl-debug.stopped', (x) => {
-
-			// The adapter emits this event when the debugger accepts user
-			// input. When control is passed to the debugger, like when a
-			// continueRequest is being processed, `this._stopped` is set
-			// to a false value. That along with this check is necessary
-			// since we must not send a StoppedEvent when processing other
-			// requests where control is immediately passed back to us.
-
-//			if (!this._stopped) {
-//				this._stopped = true;
-				// FIXME: this is not always the true reason.
-				this.sendEvent(new StoppedEvent("breakpoint", PerlDebugSession.THREAD_ID));
-//			}
+			// FIXME(bh): `breakpoint` is not always correct here.
+			this.sendEvent(new StoppedEvent("breakpoint", PerlDebugSession.THREAD_ID));
 		});
 
 		this.adapter.on('perl-debug.close', (x) => {
 			this.sendEvent(new TerminatedEvent());
 		});
 
-		this.adapter.on('perl-debug.debug', (x) => {
+		this.adapter.on('perl-debug.debug', (...x) => {
 			// FIXME: needs to check launch options
 			this.sendEvent(new Event('perl-debug.debug', x));
 		});

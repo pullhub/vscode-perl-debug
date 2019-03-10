@@ -351,7 +351,10 @@ export class perlDebuggerConnection extends EventEmitter {
 		}
 
 		if (res.finished) {
-			// Close the connection to perl debugger
+			// Close the connection to perl debugger. We try to ask nicely
+			// here, otherwise we might generate a SIGPIPE signal which can
+			// confuse some Perl programs like `prove` during multi-session
+			// debugging.
 			this.request('q')
 				.then(() => this.perlDebugger.kill())
 				.catch(() => this.perlDebugger.kill());
