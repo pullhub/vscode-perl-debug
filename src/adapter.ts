@@ -58,6 +58,7 @@ export interface RequestResponse {
 	command?:string,
 	db?:string,
 	changes: WatchpointChange[];
+	special: string[];
 }
 
 function findFilenameLine(str: string): string[] {
@@ -172,9 +173,10 @@ export class perlDebuggerConnection extends EventEmitter {
 			command: '',
 			db: '',
 			changes: [],
+			special: [],
 		};
 
-		if (res.orgData.filter(x => /exec @_ or do/.test(x)).length > 0) {
+		if (res.orgData.filter(x => /vscode:/.test(x)).length > 0) {
 			let abc = 123;
 		}
 
@@ -217,8 +219,14 @@ export class perlDebuggerConnection extends EventEmitter {
 					// Might be a good idea to investigate further.
 				}
 
+				if (/^vscode: /.test(line)) {
+					res.special.push(line);
+				}
+
 				// Collection of known messages that are not handled in any
-				// special way (and probably need not be handled either).
+				// special way and probably need not be handled either. But
+				// it might be a good idea to go over them some day and see
+				// if they should be surfaced in the user interface.
 				//
 				// if (/^Loading DB routines from (.*)/.test(line)) {
 				// }
@@ -330,6 +338,17 @@ export class perlDebuggerConnection extends EventEmitter {
 
 			}
 		});
+
+		// This happens for example because we replaced `DB::postponed`
+		// with a function that reports newly loaded sources and subs
+		// to us.
+		if (res.special.filter(x => /vscode: new loaded source/.test(x)).length) {
+			this.emit('perl-debug.new-source');
+		}
+
+		if (res.special.filter(x => /vscode: new subroutine/.test(x)).length) {
+			this.emit('perl-debug.new-subroutine');
+		}
 
 		if (res.finished) {
 			// Close the connection to perl debugger
@@ -647,8 +666,47 @@ export class perlDebuggerConnection extends EventEmitter {
 			}
 		`;
 
+		// As perl `perldebuts`, "After each required file is compiled,
+		// but before it is executed, DB::postponed(*{"_<$filename"}) is
+		// called if the subroutine DB::postponed exists." and "After
+		// each subroutine subname is compiled, the existence of
+		// $DB::postponed{subname} is checked. If this key exists,
+		// DB::postponed(subname) is called if the DB::postponed
+		// subroutine also exists."
+		//
+		// Overriding the function with a thin wrapper like this would
+		// give us a chance to report any newly loaded source directly
+		// instead of repeatedly polling for it, which could be used to
+		// make breakpoints more reliable. Same probably for function
+		// breakpoints if they are registered as explained above.
+		//
+		// Note that when a Perl process is `fork`ed, we may already have
+		// wrapped the original function and must avoid doing it again.
+		// This is not actually used at the moment. We cannot usefully
+		// break into the debugger here, since there is no good way to
+		// resume exactly as the user originally intended. There would
+		// have to be a way to process such messages asynchronously as
+		// they arrive.
+
+		const breakOnLoad = singleLine`
+			package DB;
+			*DB::postponed = sub {
+				my ($old_postponed) = @_;
+				$Devel::vscode::_overrodePostponed = 1;
+				return sub {
+					if ('GLOB' eq ref(\\$_[0]) and $_[0] =~ /<(.*)\s*$/s) {
+						print { $DB::OUT } "vscode: new loaded source $1\\n";
+					} else {
+						print { $DB::OUT } "vscode: new subroutine $_[0]\\n";
+					}
+					&{$old_postponed};
+				};
+			}->(\\&DB::postponed) unless $Devel::vscode::_overrodePostponed;
+		`;
+
 		await this.request(unreportedSources);
 		await this.request(getSourceCode);
+		await this.request(breakOnLoad);
 	}
 
 	async launchRequest(

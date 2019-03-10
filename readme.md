@@ -152,6 +152,11 @@ If you want to help test / debug read [DEBUGGING.md](DEBUGGING.md)
 * Watching variables doesn't create actual expression watchers yet - need more api for actually maintaining the list of expressions to watch. I might be able to do a workaround for now.
 * Variable values on hover doesn't work all the time due to the lack of info, eg. `$obj->{ownObj}->{ownFoo}` hovering over `$obj` will work fine - but the children are not parsed correctly - to solve this we might need to parse the line of code.
 
+### Problems with `perl5db.pl` affecting this extension
+
+* [#133875: warnLevel=0 is not the default](https://rt.perl.org/Ticket/Display.html?id=133875)
+* [#130361: debugger does not stop at postponed breakpoints](https://rt.perl.org/Ticket/Display.html?id=130361)
+
 ### Credits
 
 Credits goes to Microsoft for making an awesome editor and a nice getting started mock debugger: [https://github.com/Microsoft/vscode-mock-debug.git](https://github.com/Microsoft/vscode-mock-debug.git)

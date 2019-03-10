@@ -132,6 +132,18 @@ export class PerlDebugSession extends LoggingDebugSession {
 			this.sendEvent(new Event('perl-debug.debug', x));
 		});
 
+		this.adapter.on('perl-debug.new-source', () => {
+
+			// FIXME(bh): There is probably a better way to re-use the code
+			// in that function that does not require setting up a malformed
+			// object here, but this seems good enough for the moment.
+			this.loadedSourcesRequestAsync(
+				{} as DebugProtocol.LoadedSourcesResponse,
+				{}
+			);
+
+		});
+
 		this.adapter.on(
 			'perl-debug.attachable.listening',
 			data => {
@@ -910,14 +922,6 @@ export class PerlDebugSession extends LoggingDebugSession {
 	 * Stacktrace
 	 */
 	private async stackTraceRequestAsync(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): Promise<DebugProtocol.StackTraceResponse> {
-
-		// FIXME(bh): There is probably a better way to re-use the code
-		// in that function that does not require setting up a malformed
-		// object here, but this seems good enough for the moment.
-		await this.loadedSourcesRequestAsync(
-			{} as DebugProtocol.LoadedSourcesResponse,
-			{}
-		);
 
 		// TODO(bh): Maybe re-set the function breakpoints from here, if
 		// there are any newly loaded sources there most probably are new
